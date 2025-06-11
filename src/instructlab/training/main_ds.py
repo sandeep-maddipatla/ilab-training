@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 import time
+import sys
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -188,7 +189,7 @@ def setup_model(
     if is_torch_hpu_available() and os.getenv("HPU_ENABLE_TORCH_COMPILE", False):
         torch._dynamo.config.cache_size_limit = int(1e4)
         torch._dynamo.config.accumulated_cache_size_limit = int(2e4)
-        backend = compile_counter if args.use_instrumented_backend else 'hpu_backend'
+        backend = compile_counter if os.getenv("USE_INSTRUMENTED_BACKEND", False) else 'hpu_backend'
         logger.info(f'Using {backend=}')
         model = torch.compile(model, backend=backend, dynamic=False)
         for layer in model.model.layers:
@@ -1128,11 +1129,7 @@ if __name__ == "__main__":
         action="store_true",
         help="Use Liger kernels for training.",
     )
-    parser.add_argument(
-        "--use_instrumented_backend",
-        action="store_true",
-        help="Use compile_counter to instrument the backend and collect compilation statistics.",
-    )
+
     args = parser.parse_args()
     set_random_seed(args.seed)
     main(args)
