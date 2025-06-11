@@ -1,7 +1,6 @@
 import torch
 from functools import lru_cache
 
-
 @lru_cache(maxsize=None)
 def is_torch_hpu_available() -> bool:
     try:
@@ -9,7 +8,6 @@ def is_torch_hpu_available() -> bool:
     except ImportError:
         return False
     return True
-
 
 def simple_bucket(length):
     """

@@ -87,7 +87,7 @@ from instructlab.training.utils import (
 import instructlab.training.data_process as dp
 
 logger = logging.getLogger(__name__)
-
+from hpu_utils import compile_counter
 
 def train(
     args,
@@ -106,6 +106,7 @@ def train(
 
     batch_size = args.effective_batch_size // accelerator.grad_accum
     samples_seen = 0
+    torch._dynamo.reset()
 
     if hasattr(args, "samples_seen"):
         logger.info("Updating 'samples_seen' %d", args.samples_seen)
@@ -166,6 +167,7 @@ def train(
             log_loss = loss.detach().item()
             torch.hpu.synchronize()
             fwd_pass_elapsed_time = time.time() - start
+            recompilations = compile_counter.frame_count
 
             num_loss_counted_tokens, micro_batch_size, log_loss = map(
                 float,
@@ -201,8 +203,9 @@ def train(
 
             torch.hpu.synchronize()
             loop_end_time = time.time() - start
+            recompilations_fb = compile_counters.frame_count
             base_logger.info(
-                f"\nEpoch: {epoch}, Step: {global_step}, Rank: {torch.distributed.get_rank()}, loss = {loss}.. {fwd_pass_elapsed_time=} .. {post_reduce_elapsed_time=} .. {bwd_elapsed_time=} .. {loop_end_time=}"
+                f"\nEpoch: {epoch}, Step: {global_step}, Rank: {torch.distributed.get_rank()}, loss = {loss}.. {fwd_pass_elapsed_time=} .. {post_reduce_elapsed_time=} .. {bwd_elapsed_time=} .. {loop_end_time=} .. {recompilations=} .. {recompilations_fb=}"
             )
 
             if local_rank == 0:
