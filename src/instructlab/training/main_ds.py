@@ -97,6 +97,8 @@ import instructlab.training.data_process as dp
 
 logger = logging.getLogger("instructlab.training")
 
+#From https://github.com/pytorch/pytorch/blob/main/torch/_dynamo/testing.py
+compile_counter = torch._dynamo.testing.CompileCounterWithBackend('hpu_backend')
 
 def setup_optimizer(args, model):
     if args.distributed_training_framework == DistributedBackend.FSDP.value:
@@ -186,9 +188,9 @@ def setup_model(
     if is_torch_hpu_available() and os.getenv("HPU_ENABLE_TORCH_COMPILE", False):
         torch._dynamo.config.cache_size_limit = int(1e4)
         torch._dynamo.config.accumulated_cache_size_limit = int(2e4)
-        model = torch.compile(model, backend="hpu_backend", dynamic=False)
+        model = torch.compile(model, backend="compile_counter", dynamic=False)
         for layer in model.model.layers:
-            layer.compile(backend="hpu_backend", dynamic=False) 
+            layer.compile(backend="compile_counter", dynamic=False) 
 
     # store the base model args so we can recall them later if saving a LoRA model
     args.base_model_args = base_model_args
@@ -409,6 +411,7 @@ def train(
 
     batch_size = args.effective_batch_size // grad_accum
     samples_seen = 0
+    torch._dynamo.reset()
 
     if hasattr(args, "samples_seen"):
         logger.info("Updating 'samples_seen' %d", args.samples_seen)
@@ -469,6 +472,7 @@ def train(
             log_loss = loss.detach().item()
             torch.hpu.synchronize()
             fwd_pass_elapsed_time = time.time() - start
+            recompilations = compile_counter.frame_count
 
             num_loss_counted_tokens, micro_batch_size, log_loss = map(
                 float,
@@ -504,8 +508,9 @@ def train(
 
             torch.hpu.synchronize()
             loop_end_time = time.time() - start
+            recompilations_fb = compile_counters.frame_count
             base_logger.info(
-                f"\nEpoch: {epoch}, Step: {global_step}, Rank: {torch.distributed.get_rank()}, loss = {loss}.. {fwd_pass_elapsed_time=} .. {post_reduce_elapsed_time=} .. {bwd_elapsed_time=} .. {loop_end_time=}"
+                f"\nEpoch: {epoch}, Step: {global_step}, Rank: {torch.distributed.get_rank()}, loss = {loss}.. {fwd_pass_elapsed_time=} .. {post_reduce_elapsed_time=} .. {bwd_elapsed_time=} .. {loop_end_time=} .. {recompilations=} .. {recompilations_fb=}"
             )
 
             if local_rank == 0:
