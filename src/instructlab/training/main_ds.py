@@ -188,9 +188,11 @@ def setup_model(
     if is_torch_hpu_available() and os.getenv("HPU_ENABLE_TORCH_COMPILE", False):
         torch._dynamo.config.cache_size_limit = int(1e4)
         torch._dynamo.config.accumulated_cache_size_limit = int(2e4)
-        model = torch.compile(model, backend=compile_counter, dynamic=False)
+        backend = compile_counter if args.use_instrumented_backend else 'hpu_backend'
+        logger.info(f'Using {backend=}')
+        model = torch.compile(model, backend=backend, dynamic=False)
         for layer in model.model.layers:
-            layer.compile(backend=compile_counter, dynamic=False) 
+            layer.compile(backend=backend, dynamic=False) 
 
     # store the base model args so we can recall them later if saving a LoRA model
     args.base_model_args = base_model_args
@@ -1125,6 +1127,11 @@ if __name__ == "__main__":
         "--use_liger",
         action="store_true",
         help="Use Liger kernels for training.",
+    )
+    parser.add_argument(
+        "--use_instrumented_backend",
+        action="store_true",
+        help="Use compile_counter to instrument the backend and collect compilation statistics.",
     )
     args = parser.parse_args()
     set_random_seed(args.seed)
