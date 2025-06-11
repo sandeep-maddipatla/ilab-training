@@ -40,7 +40,6 @@ from instructlab.training.config import (  # Adjust this import if needed
     Optimizer,
 )
 
-
 #From https://github.com/pytorch/pytorch/blob/main/torch/_dynamo/testing.py
 compile_counter = torch._dynamo.testing.CompileCounterWithBackend('hpu_backend')
 
@@ -88,9 +87,11 @@ class Model:
         if self.device == "hpu" and os.getenv("HPU_ENABLE_TORCH_COMPILE", False):
             torch._dynamo.config.cache_size_limit = 10*1000
             torch._dynamo.config.accumulated_cache_size_limit = 20*1000
-            self.model = torch.compile(self.model, backend=compile_counter, dynamic=False)
+            backend = compile_counter if os.getenv("USE_INSTRUMENTED_BACKEND", False) else 'hpu_backend'
+            logger.info(f'Using {backend=}')
+            self.model = torch.compile(self.model, backend=backend, dynamic=False)
             for layer in self.model.model.layers:
-                layer.compile(backend=compile_counter, dynamic=False) 
+                layer.compile(backend=backend, dynamic=False)
 
         self.reconcile_tokenizer()
         if self.lora_config:
