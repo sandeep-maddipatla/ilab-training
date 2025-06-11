@@ -8,6 +8,7 @@ import os
 import subprocess
 import time
 import warnings
+warnings.filterwarnings("ignore")
 
 try:
     # Third Party
@@ -163,6 +164,8 @@ def train(
             )
             loss = output.loss
             log_loss = loss.detach().item()
+            torch.hpu.synchronize()
+            fwd_pass_elapsed_time = time.time() - start
 
             num_loss_counted_tokens, micro_batch_size, log_loss = map(
                 float,
@@ -175,22 +178,32 @@ def train(
                     reduction="sum",
                 ),
             )
+            torch.hpu.synchronize()
+            post_reduce_elapsed_time = time.time() - start
+
             samples_seen += int(micro_batch_size)
 
             # num_loss_counted_tokens = aggregated_values[0]
             loss = (
                 loss / num_loss_counted_tokens * world_size
             )  # dividing by the total number of non-padding tokens and multiplying by the number of GPUs so when accelerate averages by world_size, it will be the correct loss.
-            base_logger.info(
-                f"Epoch: {epoch}, Step: {global_step}, Rank: {torch.distributed.get_rank()}, loss = {loss}"
-            )
+
             accelerator.backward(loss)
+            torch.hpu.synchronize()
+            bwd_elapsed_time = time.time() - start
+
 
             if global_step % accelerator.grad_accum == 0:
                 global_grad_norm = accelerator.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
                 accelerator.lr_scheduler.step()
                 optimizer.zero_grad()
+
+            torch.hpu.synchronize()
+            loop_end_time = time.time() - start
+            base_logger.info(
+                f"\nEpoch: {epoch}, Step: {global_step}, Rank: {torch.distributed.get_rank()}, loss = {loss}.. {fwd_pass_elapsed_time=} .. {post_reduce_elapsed_time=} .. {bwd_elapsed_time=} .. {loop_end_time=}"
+            )
 
             if local_rank == 0:
                 elapsed_time = time.time() - start
