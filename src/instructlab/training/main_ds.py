@@ -7,7 +7,9 @@ import logging
 import os
 import subprocess
 import time
+import sys
 import warnings
+warnings.filterwarnings("ignore")
 
 try:
     # Third Party
@@ -68,6 +70,7 @@ from instructlab.training.model import (
     LigerModel,
     Model,
     setup_optimizer,
+    compile_counter
 )
 from instructlab.training.multipack_sampler import (
     find_packing_max_batch_len_and_grad_accum,
@@ -86,24 +89,26 @@ import instructlab.training.data_process as dp
 
 logger = logging.getLogger(__name__)
 
-
 def train(
     args,
     model: Model,
     optimizer: torch.optim.Optimizer,
     accelerator: Accelerator,
+    prof=None
 ):
     model.train()
 
     global_step = 1
     local_rank = int(os.environ["LOCAL_RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
+    max_steps_per_rank = int(os.environ.get("MAX_STEPS_PER_RANK", 0))
 
     metric_logger = logging.getLogger("instructlab.training.metrics")
     base_logger = logging.getLogger("instructlab.training")
 
     batch_size = args.effective_batch_size // accelerator.grad_accum
     samples_seen = 0
+    torch._dynamo.reset()
 
     if hasattr(args, "samples_seen"):
         logger.info("Updating 'samples_seen' %d", args.samples_seen)
@@ -161,6 +166,9 @@ def train(
             )
             loss = output.loss
             log_loss = loss.detach().item()
+            torch.hpu.synchronize()
+            fwd_pass_elapsed_time = time.time() - start
+            recompilations = compile_counter.frame_count
 
             num_loss_counted_tokens, micro_batch_size, log_loss = map(
                 float,
@@ -173,22 +181,49 @@ def train(
                     reduction="sum",
                 ),
             )
+            torch.hpu.synchronize()
+            post_reduce_elapsed_time = time.time() - start
+
             samples_seen += int(micro_batch_size)
 
             # num_loss_counted_tokens = aggregated_values[0]
             loss = (
                 loss / num_loss_counted_tokens * world_size
             )  # dividing by the total number of non-padding tokens and multiplying by the number of GPUs so when accelerate averages by world_size, it will be the correct loss.
-            base_logger.info(
-                f"Epoch: {epoch}, Step: {global_step}, Rank: {torch.distributed.get_rank()}, loss = {loss}"
-            )
+
             accelerator.backward(loss)
+            torch.hpu.synchronize()
+            bwd_elapsed_time = time.time() - start
+
 
             if global_step % accelerator.grad_accum == 0:
                 global_grad_norm = accelerator.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
                 accelerator.lr_scheduler.step()
                 optimizer.zero_grad()
+
+            torch.hpu.synchronize()
+            loop_end_time = time.time() - start
+            recompilations_fb = compile_counter.frame_count
+            base_logger.info(
+                f"\nEpoch: {epoch}, Step: {global_step}, Rank: {torch.distributed.get_rank()}, loss = {loss}.. {fwd_pass_elapsed_time=} .. {post_reduce_elapsed_time=} .. {bwd_elapsed_time=} .. {loop_end_time=} .. {recompilations=} .. {recompilations_fb=}"
+            )
+
+            metric_logger.info(
+                {
+                    "epoch": epoch,
+                    "step": global_step,
+                    "rank": torch.distributed.get_rank(),
+                    "aggregated_num_loss_counted_tokens": int(num_loss_counted_tokens),
+                    "num_tokens_rank": int(total_length),
+                    "aggregated_batch_size": int(micro_batch_size),
+                    "total_samples": len(accelerator.train_loader.dataset),
+                    "total_epoch_steps": num_epoch_steps,
+                },
+            )
+
+            if prof:
+                prof.step()
 
             if local_rank == 0:
                 elapsed_time = time.time() - start
@@ -216,27 +251,7 @@ def train(
                 # )
 
                 # TODO - Bring back consistent gradnorm and weight_norm logging
-                metric_logger.info(
-                    {
-                        "epoch": epoch,
-                        "step": global_step,
-                        "rank": torch.distributed.get_rank(),
-                        "overall_throughput": overall_throughput,
-                        "lr": current_lr,
-                        ("hpu" if args.device == "hpu" else "cuda") + "_mem_allocated": mem_allocated,
-                        ("hpu" if args.device == "hpu" else "cuda") + "_malloc_retries": malloc_retries,
-                        "num_loss_counted_tokens": int(num_loss_counted_tokens),
-                        "num_tokens_rank0": int(total_length),
-                        "batch_size": int(micro_batch_size),
-                        "total_loss": float(log_loss / num_loss_counted_tokens),
-                        "samples_seen": samples_seen,
-                        "gradnorm": global_grad_norm,
-                        "total_samples": len(accelerator.train_loader.dataset),
-                        "num_epoch_steps": num_epoch_steps,
-                        # "weight_norm": weight_norm,
-                    },
-                    extra={"step": global_step},
-                )
+
 
             if args.save_samples > 0 and (
                 global_step * batch_size % args.save_samples == 0
@@ -260,6 +275,12 @@ def train(
 
             if args.device != "hpu":
                 torch.cuda.empty_cache()
+            
+            if max_steps_per_rank != 0 and global_step >= max_steps_per_rank:
+                base_logger.info(
+                    f"Reached max steps per rank: {max_steps_per_rank}. Stopping training inner loop."
+                )
+                break
 
         if args.checkpoint_at_epoch:
             base_logger.debug(f"Saving checkpoint at epoch {epoch}")
@@ -276,6 +297,12 @@ def train(
             )
             base_logger.debug("RANK (%d) waiting at post-save barrier.", local_rank)
             torch.distributed.barrier()
+        
+        if max_steps_per_rank != 0 and global_step >= max_steps_per_rank:
+                base_logger.info(
+                    f"Reached max steps per rank: {max_steps_per_rank}. Stopping training inner loop."
+                )
+                break
 
     if args.save_last:
         save_hf_format_accelerate(
@@ -515,12 +542,16 @@ def main(args):
 
     load_latest_full_state(args=args, accelerator=accelerator)
 
-    train(
-        args,
-        model=m,
-        optimizer=optimizer,
-        accelerator=accelerator,
-    )
+    with accelerator.profile() as prof:
+        train(
+            args,
+            m,
+            optimizer,
+            accelerator,
+            prof=prof,
+        )
+    print(prof.key_averages(group_by_input_shape=True).table(sort_by="cpu_time_total", row_limit=10))
+    print(prof.key_averages().table(sort_by="self_cpu_memory_usage", row_limit=10))
 
     torch.distributed.barrier()
     torch.distributed.destroy_process_group()
