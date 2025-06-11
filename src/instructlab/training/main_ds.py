@@ -188,9 +188,9 @@ def setup_model(
     if is_torch_hpu_available() and os.getenv("HPU_ENABLE_TORCH_COMPILE", False):
         torch._dynamo.config.cache_size_limit = int(1e4)
         torch._dynamo.config.accumulated_cache_size_limit = int(2e4)
-        model = torch.compile(model, backend="compile_counter", dynamic=False)
+        model = torch.compile(model, backend=compile_counter, dynamic=False)
         for layer in model.model.layers:
-            layer.compile(backend="compile_counter", dynamic=False) 
+            layer.compile(backend=compile_counter, dynamic=False) 
 
     # store the base model args so we can recall them later if saving a LoRA model
     args.base_model_args = base_model_args
@@ -508,7 +508,7 @@ def train(
 
             torch.hpu.synchronize()
             loop_end_time = time.time() - start
-            recompilations_fb = compile_counters.frame_count
+            recompilations_fb = compile_counter.frame_count
             base_logger.info(
                 f"\nEpoch: {epoch}, Step: {global_step}, Rank: {torch.distributed.get_rank()}, loss = {loss}.. {fwd_pass_elapsed_time=} .. {post_reduce_elapsed_time=} .. {bwd_elapsed_time=} .. {loop_end_time=} .. {recompilations=} .. {recompilations_fb=}"
             )
