@@ -87,7 +87,7 @@ from instructlab.training.utils import (
 import instructlab.training.data_process as dp
 
 logger = logging.getLogger(__name__)
-from hpu_utils import compile_counter
+from model import compile_counter
 
 def train(
     args,
@@ -203,7 +203,7 @@ def train(
 
             torch.hpu.synchronize()
             loop_end_time = time.time() - start
-            recompilations_fb = compile_counters.frame_count
+            recompilations_fb = compile_counter.frame_count
             base_logger.info(
                 f"\nEpoch: {epoch}, Step: {global_step}, Rank: {torch.distributed.get_rank()}, loss = {loss}.. {fwd_pass_elapsed_time=} .. {post_reduce_elapsed_time=} .. {bwd_elapsed_time=} .. {loop_end_time=} .. {recompilations=} .. {recompilations_fb=}"
             )
