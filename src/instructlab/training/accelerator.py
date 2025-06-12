@@ -16,7 +16,7 @@ from instructlab.training.config import (  # Adjust this import if needed
 
 # Local
 from .model import Model
-
+from habana_frameworks.torch.activity_profiler import DebugActivity
 
 class Accelerator:
     def __init__(
@@ -80,9 +80,9 @@ class Accelerator:
         from accelerate import ProfileKwargs
 
         profile_kwargs = ProfileKwargs(
-            schedule_option={'wait':0, 'warmup':0, 'active':10, 'skip_first':0, 'repeat':1},
-            activities=['cpu'],Add commentMore actions
-            #debug_activities=[DebugActivity.SYNAPSE_FUNCTION_CALLS, DebugActivity.BRIDGE_FUNCTION_CALLS],
+            schedule_option={'wait':10, 'warmup':0, 'active':1, 'skip_first':0, 'repeat':1},
+            activities=['cpu', 'hpu'],
+            debug_activities=[DebugActivity.SYNAPSE_FUNCTION_CALLS, DebugActivity.BRIDGE_FUNCTION_CALLS],
             on_trace_ready=torch.profiler.tensorboard_trace_handler('./profile_logs'),
             profile_memory=True,
             record_shapes=False   
