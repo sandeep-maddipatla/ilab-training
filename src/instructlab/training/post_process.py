@@ -5,7 +5,8 @@ import statistics
 def parse_line(line):
     # Define a regular expression pattern to match the key-value pairs
     pattern = r"(\w+):\s*([\d.]+)|(\w+)\s*=\s*([\d.]+)"
-    if "Epoch:" not in line and "epoch=" not in line:
+    relevant_tags = ['Epoch:', 'epoch=', 'recompilations=', 'gradnorm']
+    if not any(tag in line for tag in relevant_tags):
         return None
     
     line = line.strip().lower()
@@ -45,6 +46,12 @@ def parse_file(filename):
                 entries[key] = line_dict
             else:
                 entries[key].update(line_dict)
+            
+            line_contd = next(file)
+            line_contd_dict = parse_line(line_contd)
+            if line_contd_dict:
+                entries[key].update(line_contd_dict)
+
     return entries
 
 def get_summary(entries, key='rank'):
@@ -54,15 +61,21 @@ def get_summary(entries, key='rank'):
         fwd_pass_times = []
         bwd_pass_times = []
         fullstep_times = []
+        fwd_recomp = []
+        bwd_recomp = []
         for hash, line_dict in entries.items():
             if line_dict[key] == target:
                 fwd_pass_times.append(line_dict['fwd_pass_elapsed_time'])
                 bwd_pass_times.append(line_dict['bwd_elapsed_time'] - line_dict['post_reduce_elapsed_time'])
                 fullstep_times.append(line_dict['loop_end_time'])
+                fwd_recomp.append(line_dict['recompilations'] - sum(fwd_recomp) - sum(bwd_recomp))
+                bwd_recomp.append(line_dict['recompilations_fb'] - line_dict['recompilations'])
 
         print(f"{key} {target}: FWD Pass (seconds): Average = {statistics.mean(fwd_pass_times):.2f}, Median = {statistics.median(fwd_pass_times):.2f}, Min = {min(fwd_pass_times):.2f}, Max = {max(fwd_pass_times):.2f}")
         print(f"{key} {target}: BWD Pass (seconds): Average = {statistics.mean(bwd_pass_times):.2f}, Median = {statistics.median(bwd_pass_times):.2f}, Min = {min(bwd_pass_times):.2f}, Max = {max(bwd_pass_times):.2f}")
         print(f"{key} {target}: StepTime (seconds): Average = {statistics.mean(fullstep_times):.2f}, Median = {statistics.median(fullstep_times):.2f}, Min = {min(fullstep_times):.2f}, Max = {max(fullstep_times):.2f}")
+        print(f"{key} {target}: Dynamo Compilations: FWD: Cumulative = {sum(fwd_recomp)}, Average = {statistics.mean(fwd_recomp):.2f} per step,")
+        print(f"{key} {target}: Dynamo Compilations: BWD: Cumulative = {sum(bwd_recomp)}, Average = {statistics.mean(bwd_recomp):.2f} per step,")
 
 
 def main():
