@@ -402,6 +402,7 @@ def train(
     tokenizer: PreTrainedTokenizer,
     train_loader: DataLoader,
     grad_accum,
+    prof=None
 ):
     model.train()
 
@@ -515,6 +516,9 @@ def train(
             base_logger.info(
                 f"\nEpoch: {epoch}, Step: {global_step}, Rank: {torch.distributed.get_rank()}, loss = {loss}.. {fwd_pass_elapsed_time=} .. {post_reduce_elapsed_time=} .. {bwd_elapsed_time=} .. {loop_end_time=} .. {recompilations=} .. {recompilations_fb=}"
             )
+
+            if prof:
+                prof.step()
 
             if local_rank == 0:
                 elapsed_time = time.time() - start
@@ -782,16 +786,20 @@ def main(args):
 
     load_latest_full_state(args=args, accelerator=accelerator)
 
-    train(
-        args,
-        model,
-        optimizer,
-        lr_scheduler,
-        accelerator,
-        tokenizer,
-        train_loader,
-        grad_accum,
-    )
+    with accelerator.profile() as prof:
+        train(
+            args,
+            model,
+            optimizer,
+            lr_scheduler,
+            accelerator,
+            tokenizer,
+            train_loader,
+            grad_accum,
+            prof=prof,
+        )
+    print(prof.key_averages(group_by_input_shape=True).table(sort_by="cpu_time_total", row_limit=10))
+    print(prof.key_averages().table(sort_by="self_cpu_memory_usage", row_limit=10))
 
     torch.distributed.barrier()
     torch.distributed.destroy_process_group()

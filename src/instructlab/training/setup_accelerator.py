@@ -17,7 +17,7 @@ if is_torch_hpu_available():
     from optimum.habana.accelerate import GaudiAccelerator
 else:
     from accelerate import Accelerator
-
+from accelerate import ProfileKwargs
 
 def get_ds_plugin(world_size, samples_per_gpu, grad_accum, opts: DeepSpeedOptions):
     # Third Party
@@ -136,6 +136,17 @@ def setup_accelerator(args, model: PreTrainedModel, grad_accum):
         raise ValueError(
             f"Unknown sharding framework: {args.distributed_training_framework}"
         )
+    
+    
+    profile_kwargs = ProfileKwargs(
+        schedule_option={'wait':0, 'warmup':0, 'active':10, 'skip_first':0, 'repeat':1},
+        activities=['cpu'],
+        #debug_activities=[DebugActivity.SYNAPSE_FUNCTION_CALLS, DebugActivity.BRIDGE_FUNCTION_CALLS],
+        on_trace_ready=torch.profiler.tensorboard_trace_handler('./profile_logs'),
+        profile_memory=True,
+        record_shapes=False   
+    )
+    accel_args["kwargs_handlers"] = [profile_kwargs]
     accelerator = (GaudiAccelerator if is_torch_hpu_available() else Accelerator)(
         **accel_args,
     )
