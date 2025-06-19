@@ -71,6 +71,7 @@ from instructlab.training.model import (
     LigerModel,
     Model,
     setup_optimizer,
+    compile_counter
 )
 from instructlab.training.multipack_sampler import (
     find_packing_max_batch_len_and_grad_accum,
@@ -88,16 +89,12 @@ from instructlab.training.utils import (
 import instructlab.training.data_process as dp
 
 logger = logging.getLogger(__name__)
-from model import compile_counter
 
 def train(
     args,
     model: Model,
     optimizer: torch.optim.Optimizer,
     accelerator: Accelerator,
-    tokenizer: PreTrainedTokenizer,
-    train_loader: DataLoader,
-    grad_accum,
     prof=None
 ):
     model.train()
@@ -549,13 +546,9 @@ def main(args):
     with accelerator.profile() as prof:
         train(
             args,
-            model,
+            m,
             optimizer,
-            lr_scheduler,
             accelerator,
-            tokenizer,
-            train_loader,
-            grad_accum,
             prof=prof,
         )
     print(prof.key_averages(group_by_input_shape=True).table(sort_by="cpu_time_total", row_limit=10))
