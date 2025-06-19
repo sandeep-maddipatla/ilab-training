@@ -53,6 +53,7 @@ from .imports import (
 )
 from .versions import compare_versions, is_torch_version
 
+from habana_frameworks.torch.activity_profiler import DebugActivity
 
 if TYPE_CHECKING:
     # Mock imports for type checking
@@ -494,7 +495,7 @@ class ProfileKwargs(KwargsHandler):
     with_flops: bool = False
     with_modules: bool = False
     output_trace_dir: Optional[str] = None
-    debug_activities: Optional[List[DebugActivity]] = None
+    debug_activities: Optional[list[DebugActivity]] = None
 
     def _get_profiler_activity(self, activity: ProfilerActivity) -> torch.profiler.ProfilerActivity:
         """Get the profiler activity from the string.
