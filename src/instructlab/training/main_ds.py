@@ -102,6 +102,7 @@ def train(
     global_step = 1
     local_rank = int(os.environ["LOCAL_RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
+    max_steps_per_rank = int(os.environ.get("MAX_STEPS_PER_RANK", 0))
 
     metric_logger = logging.getLogger("instructlab.training.metrics")
     base_logger = logging.getLogger("instructlab.training")
@@ -283,6 +284,12 @@ def train(
 
             if args.device != "hpu":
                 torch.cuda.empty_cache()
+            
+            if max_steps_per_rank != 0 and global_step >= max_steps_per_rank:
+                base_logger.info(
+                    f"Reached max steps per rank: {max_steps_per_rank}. Stopping training inner loop."
+                )
+                break
 
         if args.checkpoint_at_epoch:
             base_logger.debug(f"Saving checkpoint at epoch {epoch}")
@@ -299,6 +306,12 @@ def train(
             )
             base_logger.debug("RANK (%d) waiting at post-save barrier.", local_rank)
             torch.distributed.barrier()
+        
+        if max_steps_per_rank != 0 and global_step >= max_steps_per_rank:
+                base_logger.info(
+                    f"Reached max steps per rank: {max_steps_per_rank}. Stopping training inner loop."
+                )
+                break
 
     if args.save_last:
         save_hf_format_accelerate(
