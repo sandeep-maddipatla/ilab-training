@@ -114,7 +114,9 @@ def setup_dataloader(
     if sampler == "multipack":
         if device == "hpu":
             bucket_v = np.vectorize(bucket)
+            print(f'before bucket - {lengths=}')
             lengths = bucket_v(lengths)
+            print(f'after bucket - {lengths=}')
 
         sampler = MultipackDistributedBatchSampler(
             batch_max_length=packing_max_batch_len,

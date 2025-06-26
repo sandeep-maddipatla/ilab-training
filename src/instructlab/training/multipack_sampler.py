@@ -84,6 +84,7 @@ def find_max_pack_len_with_padding(
             padding=True,
         )
         batches = sampler.generate_batches()
+        print(f'Done with get_effective_samples_per_minibatch call')
         return len(dataset) / len(batches)
 
     samples_per_gpu = samples_per_minibatch / num_gpus
@@ -175,6 +176,7 @@ def find_packing_max_batch_len_and_grad_accum(
         else:
             packing_max_batch_len = int((avg_sample_len) * samples_per_gpu)
 
+    print(f'Done with find_packing_max_batch_len_and_grad_accum call')
     return packing_max_batch_len, grad_accum
 
 
@@ -384,6 +386,8 @@ class MultipackDistributedBatchSampler(Sampler):
         self.eff_total_used = 0
         self.eff_total_slots = 0
         self.padding = padding
+        print(f'MultipackDistributedBatchSampler Init complete')
+        print(f'{self.__dict__=}')
 
     def set_epoch(self, epoch: int):
         self.epoch = epoch

@@ -153,6 +153,17 @@ def train(
             if not args.use_dolomite:
                 for k in batch:
                     batch[k] = batch[k].to('hpu' if args.device == "hpu" else local_rank)
+            
+            metric_logger.info(
+                {
+                    "epoch": epoch,
+                    "step": global_step,
+                    "rank": torch.distributed.get_rank(),
+                    "num_loss_counted_tokens": int(num_loss_counted_tokens),
+                    "num_tokens": int(total_length),
+                    "micro_batch_size": int(micro_batch_size),
+                },
+            )
 
             hpu_args = {}
             if args.device == "hpu":
@@ -211,6 +222,19 @@ def train(
                 f"\nEpoch: {epoch}, Step: {global_step}, Rank: {torch.distributed.get_rank()}, loss = {loss}.. {fwd_pass_elapsed_time=} .. {post_reduce_elapsed_time=} .. {bwd_elapsed_time=} .. {loop_end_time=} .. {recompilations=} .. {recompilations_fb=}"
             )
 
+            metric_logger.info(
+                {
+                    "epoch": epoch,
+                    "step": global_step,
+                    "rank": torch.distributed.get_rank(),
+                    "aggregated_num_loss_counted_tokens": int(num_loss_counted_tokens),
+                    "num_tokens_rank": int(total_length),
+                    "aggregated_batch_size": int(micro_batch_size),
+                    "total_samples": len(accelerator.train_loader.dataset),
+                    "total_epoch_steps": num_epoch_steps,
+                },
+            )
+
             if prof:
                 prof.step()
 
@@ -240,27 +264,7 @@ def train(
                 # )
 
                 # TODO - Bring back consistent gradnorm and weight_norm logging
-                metric_logger.info(
-                    {
-                        "epoch": epoch,
-                        "step": global_step,
-                        "rank": torch.distributed.get_rank(),
-                        "overall_throughput": overall_throughput,
-                        "lr": current_lr,
-                        ("hpu" if args.device == "hpu" else "cuda") + "_mem_allocated": mem_allocated,
-                        ("hpu" if args.device == "hpu" else "cuda") + "_malloc_retries": malloc_retries,
-                        "num_loss_counted_tokens": int(num_loss_counted_tokens),
-                        "num_tokens_rank0": int(total_length),
-                        "batch_size": int(micro_batch_size),
-                        "total_loss": float(log_loss / num_loss_counted_tokens),
-                        "samples_seen": samples_seen,
-                        "gradnorm": global_grad_norm,
-                        "total_samples": len(accelerator.train_loader.dataset),
-                        "num_epoch_steps": num_epoch_steps,
-                        # "weight_norm": weight_norm,
-                    },
-                    extra={"step": global_step},
-                )
+
 
             if args.save_samples > 0 and (
                 global_step * batch_size % args.save_samples == 0
