@@ -8,13 +8,25 @@ from perfetto.trace_processor import TraceProcessor, TraceProcessorConfig
 # pip install perfetto pandas numpy
 #
 
+def capture_stats(mme_slices, tpc_slices, host_fwd_pass_slices):
+    count = 0
+    for s in mme_slices:
+        print(f'{s.__dict__=}')
+        count += 1
+        if count == 10:
+            break
+    return 0
+
 def analyse_trace(trace_path):
     tp = TraceProcessor(trace=trace_path)
 
     processes = tp.query("""
         SELECT upid, pid, name, cmdline, start_ts FROM process
     """)
-    
+
+    mme_slices = None
+    tpc_slices = None
+
     print(f'{processes=}')
     for p in processes:
         print(f"Process ID: {p.upid}, PID:{p.pid} Name: {p.name}, Cmdline: {p.cmdline}, Start time: {p.start_ts}")
@@ -39,9 +51,16 @@ def analyse_trace(trace_path):
                     SELECT ts, dur, name, category FROM slice WHERE track_id = {tr.track_id} ORDER BY ts
                 """)
                 slice_count += len(slices) if slices else 0
+                if '[HD0] TPC 0' in t.name:
+                    tpc_slices = slices
+                elif '[HD0] MME' in t.name:
+                    mme_slices = slices
             
             if slice_count !=0 and track_count != 0:
                 print(f"\tThread ID: {t.utid}, PID:{t.tid} Name: {t.name}, Start time: {t.start_ts}, {track_count=}, {track_id_list=}, {slice_count=}")
+
+
+    capture_stats(mme_slices, tpc_slices)
     
     '''
     x = tp.query("select * from slice where id=344204")
