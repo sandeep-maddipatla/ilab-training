@@ -305,7 +305,7 @@ def allocate(
     # Dynamic batch allocator, similar to Multifit
     # https://en.wikipedia.org/wiki/Multifit_algorithm
     # ~99.5% efficiency on OpenChat training set (12 * 2048 ctx len)
-
+    print(f'##### ALLOCATE: {rank=}, {c=}, {n=}, {padding=}, {len(lengths)=}')
     s = 0
     start_index = 0
     result = []
@@ -314,19 +314,22 @@ def allocate(
         # binary search [l, r)
         l = 1
         r = 1 + np.searchsorted(lengths_cumsum[start_index:], s + c * n, "right")
-
         while r - l > 1:
             m = (l + r) // 2
             if padding:
                 check = ffd_check_padding(lengths[start_index : start_index + m], c, n)
             else:
                 check = ffd_check(lengths[start_index : start_index + m], c, n)
+            print(f' ALLOCATE: Inner While loop: {start_index=}, {l=}, {r=}, {m=}, {check=}, ')
+
             if check:
                 l = m
             else:
                 r = m
 
         # use length l
+        print(f' ALLOCATE: Post Inner-While: {start_index=}, {l=}, {r=}')
+
         if padding:
             batch = ffd_with_result_padding(
                 lengths[start_index : start_index + l], c, start_index
@@ -335,6 +338,8 @@ def allocate(
             batch = ffd_with_result(
                 lengths[start_index : start_index + l], c, start_index
             )
+        print(f' ALLOCATE: After ffd: {start_index=}, {len(batch)=}')
+
         assert len(batch) <= n
         if len(batch) < n:
             break
@@ -344,6 +349,9 @@ def allocate(
 
         # add local rank
         result.append(batch[rank])
+        print(f' ALLOCATE: After ffd: {start_index=}, {s=}, {result=}')
+
+    print(f' ALLOCATE: After loop: {s=}')
 
     return result, s, len(result) * c * n
 
