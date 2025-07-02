@@ -110,19 +110,21 @@ def print_summary(layers, tag=""):
     print(f'{tag}: Duration Time in milliseconds: {layer_durations}')
     bubble_times = [x['bubble']/1000000 for x in layers]
     print(f'{tag}: Bubble Time in milliseconds: {bubble_times}')
+    print(f'{tag}: Median ExecRun time : {statistics.median(layer_durations)} ms')
+    print(f'{tag}: Median Bubble time  : {statistics.median(bubble_times)} ms')
 
-def capture_stats(tpc_slices, mme_slices, host_fwd_pass_slices=None, host_bwd_pass_slices=None):
+def capture_stats(tpc_slices, mme_slices, host_fwd_pass_slices=None, host_bwd_pass_slices=None, tag=''):
 
     bwd_pass_start_ts = get_bwd_pass_start_ts(host_bwd_pass_slices)
     fwd_layers = process_tpc_slices_fwd(tpc_slices, end_ts=bwd_pass_start_ts)
-    print_summary(fwd_layers, tag='FWD')
+    print_summary(fwd_layers, tag='FWD_' + tag)
 
     bwd_layers = process_tpc_slices_bwd(tpc_slices, start_ts=bwd_pass_start_ts)
-    print_summary(bwd_layers, tag='BWD')
+    print_summary(bwd_layers, tag='BWD_' + tag)
 
     return 0
 
-def analyse_trace(trace_path):
+def analyse_trace(trace_path, tag=''):
     tp = TraceProcessor(trace=trace_path)
 
     processes = tp.query("""
@@ -171,7 +173,7 @@ def analyse_trace(trace_path):
                 print(f"\tThread ID: {t.utid}, PID:{t.tid} Name: {t.name}, Start time: {t.start_ts}, {track_count=}, {track_id_list=}, {slice_count=}")
 
 
-    capture_stats(tpc_slices, mme_slices, fwd_slices, autograd_slices)
+    capture_stats(tpc_slices, mme_slices, fwd_slices, autograd_slices, tag)
     
     '''
     x = tp.query("select * from slice where id=344204")
@@ -196,12 +198,12 @@ def analyse_trace(trace_path):
     '''
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python process_profile.py <trace_file>")
+    if len(sys.argv) < 2:
+        print("Usage: python process_profile.py <trace_file> [rank/tag]")
         sys.exit(1)
     
     trace_path = sys.argv[1]
-    analyse_trace(trace_path)
+    analyse_trace(trace_path, sys.argv[2] if len(sys.argv) == 3 else 'Unknown')
     
 
 if __name__ == "__main__":  
