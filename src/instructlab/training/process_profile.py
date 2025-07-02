@@ -58,18 +58,67 @@ def process_tpc_slices_fwd(tpc_slices, start_ts=0, end_ts=float('inf')):
             # Can end this here.
             break
     
-    print(f'{len(layer_ts_list)=}')
-    layer_durations = [x['duration']/1000000 for x in layer_ts_list]
-    print(f'Duration Time in milliseconds: {layer_durations}')
-    bubble_times = [x['bubble']/1000000 for x in layer_ts_list]
-    print(f'Bubble Time in milliseconds: {bubble_times}')
+    return layer_ts_list
 
+def process_tpc_slices_bwd(tpc_slices, start_ts=0, end_ts=float('inf')):
+    layer_ts_list = []
+
+    ## Parse slices to identify layer start and layer end timestamps
+    layer_start_ts = None
+    layer_end_ts = None
+    for s in tpc_slices:
+        if s.ts < start_ts:
+            continue
+        
+        if s.name and 'rms_norm_fwd_bf16' in s.name:
+            # there are two rms_norms per layer. Every alternate one indicates start of an attention layer
+            if not layer_start_ts:
+                layer_start_ts = s.ts
+        elif s.name and 'memcpy_u8' in s.name:
+            # an attention layer (except the last one) ends with a second memcpy_u8 block
+            if not layer_start_ts:
+                # There is a memcpy at the start before bwd attention layers start
+                continue
+            if layer_end_ts:
+                layer_end_ts = s.ts + s.dur
+                layer_ts_list.append({ 'start': layer_start_ts, 'end': layer_end_ts, 'duration': layer_end_ts - layer_start_ts, 'bubble': 0 if not layer_ts_list else layer_start_ts - layer_ts_list[-1]['end']})
+                layer_start_ts = None
+                layer_end_ts = None
+            else:
+                layer_end_ts = s.ts + s.dur
+        elif s.name and 'scatter_add_fwd_bf16' in s.name:
+            # last attn layer has a scatter_add_fwd_bf16 of memcpy_u8 
+            # (there are a few more ops after this, but they are small and not uniquely identifiable) for a simple parser like this
+            # we will approximate that it will end at this
+            if layer_start_ts:
+                # One of the early layers have an extra memcpy_u8. Ignore this as it is not related to an attn layer
+                layer_end_ts = s.ts + s.dur
+                layer_ts_list.append({ 'start': layer_start_ts, 'end': layer_end_ts, 'duration': layer_end_ts - layer_start_ts , 'bubble': 0 if not layer_ts_list else layer_start_ts - layer_ts_list[-1]['end']})
+                layer_start_ts = None
+                layer_end_ts = None
+
+        if s.ts > end_ts:
+            # We have started hitting blocks from the bwd pass
+            # Can end this here.
+            break
+    
+    return layer_ts_list
+
+def print_summary(layers, tag=""):
+    print(f'{tag}: {len(layers)=}')
+    layer_durations = [x['duration']/1000000 for x in layers]
+    print(f'{tag}: Duration Time in milliseconds: {layer_durations}')
+    bubble_times = [x['bubble']/1000000 for x in layers]
+    print(f'{tag}: Bubble Time in milliseconds: {bubble_times}')
 
 def capture_stats(tpc_slices, mme_slices, host_fwd_pass_slices=None, host_bwd_pass_slices=None):
 
     bwd_pass_start_ts = get_bwd_pass_start_ts(host_bwd_pass_slices)
-    process_tpc_slices_fwd(tpc_slices, end_ts=bwd_pass_start_ts)
+    fwd_layers = process_tpc_slices_fwd(tpc_slices, end_ts=bwd_pass_start_ts)
+    print_summary(fwd_layers, tag='FWD')
 
+    bwd_layers = process_tpc_slices_bwd(tpc_slices, start_ts=bwd_pass_start_ts)
+    print_summary(bwd_layers, tag='BWD')
 
     return 0
 
