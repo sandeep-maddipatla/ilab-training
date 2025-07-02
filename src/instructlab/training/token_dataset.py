@@ -121,6 +121,7 @@ def setup_dataloader(
             rank=rank,
             seed=seed,
             padding=not flash_enabled,
+            enable_prints = True,
         )
         sampler = {"batch_sampler": sampler}
     elif sampler == "distributed":
