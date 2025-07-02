@@ -92,15 +92,15 @@ def setup_dataloader(
     pad_token_id: int,
     num_workers: int = 8,
     flash_enabled=True,
-    max_batch_len=60000,
-    packing_max_batch_len=60000,
+    max_batch_work=60000,
+    packing_max_batch_work=60000,
     samples_per_gpu=None,
     sampler="multipack",
     seed=47,
     device=None,
 ) -> DataLoader:
     collate_fn = make_collate_fn(
-        pad_token_id, flash_enabled=flash_enabled, max_batch_len=max_batch_len,
+        pad_token_id, flash_enabled=flash_enabled, max_batch_work=max_batch_work, 
         device=device,
     )
     rank = int(os.environ["RANK"])
@@ -113,7 +113,7 @@ def setup_dataloader(
             lengths = bucket_v(lengths)
 
         sampler = MultipackDistributedBatchSampler(
-            batch_max_length=packing_max_batch_len,
+            batch_max_work=packing_max_batch_work,
             lengths=lengths,
             num_replicas=world_size,
             rank=rank,
