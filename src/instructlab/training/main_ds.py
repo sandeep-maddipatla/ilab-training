@@ -162,6 +162,8 @@ def train(
                     "num_loss_counted_tokens": int(num_loss_counted_tokens),
                     "num_tokens": int(total_length),
                     "micro_batch_size": int(micro_batch_size),
+                    "lens": batch.pop("original_lens").tolist(),
+                    "label_lens": batch.pop("o_label_lens").tolist(),
                 },
             )
 
