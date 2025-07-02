@@ -293,7 +293,7 @@ def ffd_with_result_padding(a: np.ndarray, c: int, start_index: int):
     return bins_result
 
 
-@numba.njit
+#@numba.njit
 def allocate(
     lengths: np.ndarray,
     lengths_cumsum: np.ndarray,
@@ -301,11 +301,15 @@ def allocate(
     c: int,
     n: int,
     padding: bool = True,
+    enable_prints: bool = False
 ):
+    def print_l(msg):
+        if enable_prints and (rank == 0):
+            print(msg)
     # Dynamic batch allocator, similar to Multifit
     # https://en.wikipedia.org/wiki/Multifit_algorithm
     # ~99.5% efficiency on OpenChat training set (12 * 2048 ctx len)
-    print(f'##### ALLOCATE: {rank=}, {c=}, {n=}, {padding=}, {len(lengths)=}')
+    print_l(f'##### ALLOCATE: {rank=}, {c=}, {n=}, {padding=}, {len(lengths)=}')
     s = 0
     start_index = 0
     result = []
@@ -320,7 +324,7 @@ def allocate(
                 check = ffd_check_padding(lengths[start_index : start_index + m], c, n)
             else:
                 check = ffd_check(lengths[start_index : start_index + m], c, n)
-            print(f' ALLOCATE: Inner While loop: {start_index=}, {l=}, {r=}, {m=}, {check=}, ')
+            print_l(f' ALLOCATE: Inner While loop: {rank=}, {s=}, {start_index=}, {l=}, {r=}, {m=}, {check=}, ')
 
             if check:
                 l = m
@@ -328,7 +332,7 @@ def allocate(
                 r = m
 
         # use length l
-        print(f' ALLOCATE: Post Inner-While: {start_index=}, {l=}, {r=}')
+        print_l(f' ALLOCATE: Post Inner-While: {rank=}, {s=}, {start_index=}, {l=}, {r=}')
 
         if padding:
             batch = ffd_with_result_padding(
@@ -338,7 +342,7 @@ def allocate(
             batch = ffd_with_result(
                 lengths[start_index : start_index + l], c, start_index
             )
-        print(f' ALLOCATE: After ffd: {start_index=}, {len(batch)=}')
+        print_l(f' ALLOCATE: After ffd: {rank=}, {start_index=}, {len(batch)=}')
 
         assert len(batch) <= n
         if len(batch) < n:
@@ -349,9 +353,9 @@ def allocate(
 
         # add local rank
         result.append(batch[rank])
-        print(f' ALLOCATE: After ffd: {start_index=}, {s=}, {result=}')
+        print_l(f' ALLOCATE: After ffd:  {rank=}, {start_index=}, {s=}')
 
-    print(f' ALLOCATE: After loop: {s=}')
+    print_l(f' ALLOCATE: After loop: {rank=}, {s=}')
 
     return result, s, len(result) * c * n
 
@@ -369,6 +373,7 @@ class MultipackDistributedBatchSampler(Sampler):
         rank: Optional[int] = None,
         seed: int = 0,
         padding: bool = True,
+        enable_prints: bool = False,
     ):
         # Get rank
         if num_replicas is None:
@@ -394,6 +399,7 @@ class MultipackDistributedBatchSampler(Sampler):
         self.eff_total_used = 0
         self.eff_total_slots = 0
         self.padding = padding
+        self.enable_prints = enable_prints
         print(f'MultipackDistributedBatchSampler Init complete')
         print(f'{self.__dict__=}')
 
@@ -423,6 +429,7 @@ class MultipackDistributedBatchSampler(Sampler):
             c=self.batch_max_length,
             n=self.num_replicas,
             padding=self.padding,
+            enable_prints = self.enable_prints
         )
 
         batches = [indices[batch] for batch in batches]

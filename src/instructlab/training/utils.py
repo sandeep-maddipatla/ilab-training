@@ -274,6 +274,7 @@ def make_collate_fn(
 
             def pad_collate_fn(batch):
                 lens = np.array([len(item["input_ids"]) for item in batch])
+                label_lens = np.array([len(item["labels"]) for item in batch])
                 max_len = max(lens)
 
                 if device=="hpu":   
@@ -322,7 +323,10 @@ def make_collate_fn(
                     "num_loss_counted_tokens": num_loss_counted_tokens,
                     "attention_mask": attention_mask,
                     "num_samples": len(batch),
+                    "original_lens": torch.from_numpy(lens),
+                    "o_label_lens": torch.from_numpy(label_lens),
                 }
+
 
     return pad_collate_fn
 
