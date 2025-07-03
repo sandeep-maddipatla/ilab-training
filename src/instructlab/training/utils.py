@@ -213,7 +213,7 @@ class StreamablePopen(subprocess.Popen):
 
 
 def make_collate_fn(
-    pad_token_id, use_dolomite=False, flash_enabled=True, max_batch_len=60000, device=None,
+    pad_token_id, use_dolomite=False, flash_enabled=True, max_batch_work=60000, device=None,
 ):
     if use_dolomite:
 
@@ -221,7 +221,7 @@ def make_collate_fn(
             lens = np.array([len(item["input_ids"]) for item in batch])
 
             cumsum_lens = np.cumsum(lens)
-            valid_up_to = int((cumsum_lens < max_batch_len).sum())
+            valid_up_to = int((cumsum_lens < max_batch_work).sum())
             total_len = cumsum_lens[valid_up_to - 1]
 
             batch = batch[:valid_up_to]
@@ -251,7 +251,7 @@ def make_collate_fn(
 
                 for num_samples, item in enumerate(batch):
                     item_len = len(item["input_ids"])
-                    if total_len + item_len > max_batch_len:
+                    if total_len + item_len > max_batch_work:
                         break
 
                     input_ids.extend(item["input_ids"].tolist())

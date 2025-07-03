@@ -93,8 +93,8 @@ def setup_dataloader(
     num_workers: int = 8,
     use_dolomite=False,
     flash_enabled=True,
-    max_batch_len=60000,
-    packing_max_batch_len=60000,
+    max_batch_work=60000,
+    packing_max_batch_work=60000,
     samples_per_gpu=None,
     sampler="multipack",
     seed=47,
@@ -104,7 +104,7 @@ def setup_dataloader(
         pad_token_id,
         use_dolomite=use_dolomite,
         flash_enabled=flash_enabled,
-        max_batch_len=max_batch_len,
+        max_batch_work=max_batch_work, 
         device=device,
     )
     rank = int(os.environ["RANK"])
@@ -119,7 +119,7 @@ def setup_dataloader(
             print(f'after bucket - {lengths=}')
 
         sampler = MultipackDistributedBatchSampler(
-            batch_max_length=packing_max_batch_len,
+            batch_max_work=packing_max_batch_work,
             lengths=lengths,
             num_replicas=world_size,
             rank=rank,
