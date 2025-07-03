@@ -180,7 +180,7 @@ def find_packing_max_batch_len_and_grad_accum(
     return packing_max_batch_len, grad_accum
 
 
-@numba.njit
+#@numba.njit
 def ffd_check(a: np.ndarray, c: int, n: int):
     # First-fit-decreasing bin packing
     # Check if a[] could fit in n bins with capacity c
@@ -201,8 +201,9 @@ def ffd_check(a: np.ndarray, c: int, n: int):
 
     return True
 
+def 
 
-@numba.njit
+#@numba.njit
 def ffd_check_padding(a: np.ndarray, c: int, n: int):
     # First-fit-decreasing bin packing
     # Check if a[] could fit in n bins with capacity c
@@ -235,7 +236,7 @@ def ffd_check_padding(a: np.ndarray, c: int, n: int):
     return True
 
 
-@numba.njit
+#@numba.njit
 def ffd_with_result(a: np.ndarray, c: int, start_index: int):
     # First-fit-decreasing bin packing (with result return)
 
@@ -260,7 +261,7 @@ def ffd_with_result(a: np.ndarray, c: int, start_index: int):
     return bins_result
 
 
-@numba.njit
+#@numba.njit
 def ffd_with_result_padding(a: np.ndarray, c: int, start_index: int):
     # First-fit-decreasing bin packing (with result return)
 
@@ -314,6 +315,10 @@ def allocate(
     start_index = 0
     result = []
 
+    if rank==0:
+        #import pdb; pdb.set_trace()
+        pass
+ 
     while True:
         # binary search [l, r)
         l = 1
