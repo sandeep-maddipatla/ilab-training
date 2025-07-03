@@ -179,6 +179,10 @@ def find_packing_max_batch_len_and_grad_accum(
     print(f'Done with find_packing_max_batch_len_and_grad_accum call')
     return packing_max_batch_len, grad_accum
 
+def work_metric(sample_lengths, multiplier=None):
+    if not multiplier:
+        multiplier = len(sample_lengths)
+    return max(sample_lengths) * multiplier
 
 #@numba.njit
 def ffd_check(a: np.ndarray, c: int, n: int):
@@ -201,8 +205,6 @@ def ffd_check(a: np.ndarray, c: int, n: int):
 
     return True
 
-def 
-
 #@numba.njit
 def ffd_check_padding(a: np.ndarray, c: int, n: int):
     # First-fit-decreasing bin packing
@@ -221,9 +223,8 @@ def ffd_check_padding(a: np.ndarray, c: int, n: int):
         not_found = True
         for idx in range(n):
             # Calculate the new capacity if size is added to the bin
-            new_capacity = max(bins_max_lengths[idx], size) * (
-                bins_num_samples[idx] + 1
-            )
+            tmp = 
+            new_capacity = work_metric(max(bins_max_lengths[idx], size), multiplier = bins_num_samples[idx] + 1)
             if new_capacity <= c:
                 bins_max_lengths[idx] = max(bins_max_lengths[idx], size)
                 bins_num_samples[idx] += 1
@@ -297,13 +298,14 @@ def ffd_with_result_padding(a: np.ndarray, c: int, start_index: int):
 #@numba.njit
 def allocate(
     lengths: np.ndarray,
-    lengths_cumsum: np.ndarray,
+    works_cumsum: np.ndarray,
     rank: int,
     c: int,
     n: int,
     padding: bool = True,
     enable_prints: bool = False
 ):
+    # c, works_cumsum are expected to be generated with consistent work metrics
     def print_l(msg):
         if enable_prints and (rank == 0):
             print(msg)
@@ -322,7 +324,7 @@ def allocate(
     while True:
         # binary search [l, r)
         l = 1
-        r = 1 + np.searchsorted(lengths_cumsum[start_index:], s + c * n, "right")
+        r = 1 + np.searchsorted(works_cumsum[start_index:], s + c * n, "right")
         while r - l > 1:
             m = (l + r) // 2
             if padding:
@@ -354,7 +356,7 @@ def allocate(
             break
 
         start_index += l
-        s = lengths_cumsum[start_index - 1]
+        s = works_cumsum[start_index - 1]
 
         # add local rank
         result.append(batch[rank])
@@ -425,11 +427,12 @@ class MultipackDistributedBatchSampler(Sampler):
             )
 
         lengths = self.lengths[indices]
-        lengths_cumsum = np.cumsum(lengths)
+        works = [work_metric(ll, multiplier=1) for ll in lengths]
+        works_cumsum = np.cumsum(works)
 
         batches, total_used, total_slots = allocate(
             lengths=lengths,
-            lengths_cumsum=lengths_cumsum,
+            works_cumsum=works_cumsum,
             rank=self.rank,
             c=self.batch_max_length,
             n=self.num_replicas,
