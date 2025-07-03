@@ -198,7 +198,7 @@ class StreamablePopen(subprocess.Popen):
                     break
 
 
-def make_collate_fn(pad_token_id, flash_enabled=True, max_batch_len=60000, device=None):
+def make_collate_fn(pad_token_id, flash_enabled=True, max_batch_work=60000, device=None):
     if flash_enabled:
 
         def pad_collate_fn(batch):
@@ -210,7 +210,7 @@ def make_collate_fn(pad_token_id, flash_enabled=True, max_batch_len=60000, devic
 
             for num_samples, item in enumerate(batch):
                 item_len = len(item["input_ids"])
-                if total_len + item_len > max_batch_len:
+                if total_len + item_len > max_batch_work:
                     break
 
                 input_ids.extend(item["input_ids"].tolist())

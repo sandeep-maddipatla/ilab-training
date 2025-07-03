@@ -73,7 +73,8 @@ from instructlab.training.model import (
     compile_counter
 )
 from instructlab.training.multipack_sampler import (
-    find_packing_max_batch_len_and_grad_accum,
+    find_packing_max_batch_work_and_grad_accum,
+    work_metric
 )
 from instructlab.training.token_dataset import setup_dataloader, setup_dataset
 from instructlab.training.tokenizer_utils import setup_tokenizer
@@ -434,12 +435,18 @@ def main(args):
 
     args.base_model_args = m.base_model_args
 
+    # Convert args.max_batch_len to work metric
+    avg_samples_per_device_estimate = (args.effective_batch_size / torch.distributed.get_world_size())
+    max_batch_work = work_metric(
+        args.max_batch_len / avg_samples_per_device_estimate,
+        multiplier = avg_samples_per_device_estimate
+    )
     try:
-        packing_max_batch_len, grad_accum = find_packing_max_batch_len_and_grad_accum(
+        packing_max_batch_work, grad_accum = find_packing_max_batch_work_and_grad_accum(
             num_gpus=torch.distributed.get_world_size(),
             avg_sample_len=dataset.get_lengths().mean(),
             effective_batch_size=args.effective_batch_size,
-            max_batch_len_per_gpu=args.max_batch_len,
+            max_batch_work_per_gpu=max_batch_work,
             is_padding=not flash_enabled,
             dataset=dataset,
             seed=args.seed,
@@ -450,7 +457,7 @@ def main(args):
 
         # fallback to grad accum = 1
         # NOTE: packing max batch len will not be used
-        packing_max_batch_len = None
+        packing_max_batch_work = None
         grad_accum = 1
         args.sampler = "distributed"
 
@@ -463,8 +470,8 @@ def main(args):
         tokenizer.pad_token_id,
         num_workers=8,
         flash_enabled=flash_enabled,
-        max_batch_len=args.max_batch_len,
-        packing_max_batch_len=packing_max_batch_len,
+        max_batch_work=max_batch_work,
+        packing_max_batch_work=packing_max_batch_work,
         samples_per_gpu=args.samples_per_gpu,
         sampler=args.sampler,
         seed=args.seed,
@@ -483,8 +490,8 @@ def main(args):
             tokenizer.pad_token_id,
             num_workers=8,
             flash_enabled=flash_enabled,
-            max_batch_len=args.max_batch_len,
-            packing_max_batch_len=packing_max_batch_len,
+            max_batch_work=max_batch_work,
+            packing_max_batch_work=packing_max_batch_work,
             samples_per_gpu=args.samples_per_gpu,
             sampler=args.sampler,
             seed=args.seed,
@@ -498,7 +505,7 @@ def main(args):
                 "avg_sample_len": dataset.get_lengths().mean(),
                 "effective_batch_size": args.effective_batch_size,
                 "max_batch_len_per_gpu": args.max_batch_len,
-                "packing_max_batch_len": packing_max_batch_len,
+                "packing_max_batch_work": packing_max_batch_work,
                 "grad_accum": grad_accum,
                 "num_batches": len(train_loader),
                 "avg_samples_per_batch": len(dataset) / len(train_loader),
