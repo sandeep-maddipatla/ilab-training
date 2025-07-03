@@ -74,7 +74,8 @@ from instructlab.training.model import (
     compile_counter
 )
 from instructlab.training.multipack_sampler import (
-    find_packing_max_batch_len_and_grad_accum,
+    find_packing_max_batch_work_and_grad_accum,
+    work_metric
 )
 from instructlab.training.token_dataset import setup_dataloader, setup_dataset
 from instructlab.training.tokenizer_utils import setup_tokenizer
@@ -452,12 +453,18 @@ def main(args):
 
     args.base_model_args = m.base_model_args
 
+    # Convert args.max_batch_len to work metric
+    avg_samples_per_device_estimate = (args.effective_batch_size / torch.distributed.get_world_size())
+    max_batch_work = work_metric(
+        args.max_batch_len / avg_samples_per_device_estimate,
+        multiplier = avg_samples_per_device_estimate
+    )
     try:
-        packing_max_batch_len, grad_accum = find_packing_max_batch_len_and_grad_accum(
+        packing_max_batch_work, grad_accum = find_packing_max_batch_work_and_grad_accum(
             num_gpus=torch.distributed.get_world_size(),
             avg_sample_len=dataset.get_lengths().mean(),
             effective_batch_size=args.effective_batch_size,
-            max_batch_len_per_gpu=args.max_batch_len,
+            max_batch_work_per_gpu=max_batch_work,
             is_padding=not (args.use_dolomite or flash_enabled),
             dataset=dataset,
             seed=args.seed,

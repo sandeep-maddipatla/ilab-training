@@ -35,9 +35,10 @@ import torch
 import torch.distributed as dist
 
 from instructlab.training.hpu_utils import is_torch_hpu_available, bucket
+from collections.abc import Iterable
 
 
-def find_max_pack_len_with_padding(
+def find_max_pack_work_with_padding(
     dataset,
     samples_per_minibatch,
     num_gpus,
@@ -122,11 +123,11 @@ def find_max_pack_len_with_padding(
     return packing_max_batch_len + addition
 
 
-def find_packing_max_batch_len_and_grad_accum(
+def find_packing_max_batch_work_and_grad_accum(
     num_gpus,
     avg_sample_len,
     effective_batch_size,
-    max_batch_len_per_gpu,
+    max_batch_work_per_gpu,
     is_padding,
     dataset,
     seed,
@@ -154,19 +155,19 @@ def find_packing_max_batch_len_and_grad_accum(
       accumulation steps required to maintain the effective batch size.
     """
 
-    packing_max_batch_len = max_batch_len_per_gpu + 1
+    packing_max_batch_work = max_batch_work_per_gpu + 1
     grad_accum = 0
-    while packing_max_batch_len > max_batch_len_per_gpu:
+    while packing_max_batch_work > max_batch_work_per_gpu:
         grad_accum += 1
         samples_per_minibatch = effective_batch_size / grad_accum
         samples_per_gpu = samples_per_minibatch / num_gpus
-        if int(avg_sample_len * samples_per_gpu) < dataset.get_lengths().max():
+        if int(work_metric(avg_sample_len, samples_per_gpu)) < work_metric(dataset.get_lengths().max()):
             raise RuntimeError(
                 f"Effective batch size is too low for multipack sampling, max sample length={dataset.get_lengths().max()} and min packing length={int(avg_sample_len * samples_per_gpu)}. "
                 "Switching to naive distributed sampling."
             )
         if is_padding:
-            packing_max_batch_len = find_max_pack_len_with_padding(
+            packing_max_batch_work = find_max_pack_work_with_padding(
                 dataset,
                 samples_per_minibatch,
                 num_gpus,
@@ -182,6 +183,8 @@ def find_packing_max_batch_len_and_grad_accum(
 def work_metric(sample_lengths, multiplier=None):
     if not multiplier:
         multiplier = len(sample_lengths)
+    if not isinstance(sample_lengths, Iterable):
+        sample_lengths = [sample_lengths]
     return max(sample_lengths) * multiplier
 
 #@numba.njit
@@ -223,7 +226,6 @@ def ffd_check_padding(a: np.ndarray, c: int, n: int):
         not_found = True
         for idx in range(n):
             # Calculate the new capacity if size is added to the bin
-            tmp = 
             new_capacity = work_metric(max(bins_max_lengths[idx], size), multiplier = bins_num_samples[idx] + 1)
             if new_capacity <= c:
                 bins_max_lengths[idx] = max(bins_max_lengths[idx], size)
@@ -277,9 +279,7 @@ def ffd_with_result_padding(a: np.ndarray, c: int, start_index: int):
         add_new = True
         for idx in range(len(bins_max_lengths)):
             # Calculate the new capacity if size is added to the bin
-            new_capacity = max(bins_max_lengths[idx], size) * (
-                bins_num_samples[idx] + 1
-            )
+            new_capacity = work_metric(max(bins_max_lengths[idx], size), multiplier = bins_num_samples[idx] + 1)
             if new_capacity <= c:
                 bins_max_lengths[idx] = max(bins_max_lengths[idx], size)
                 bins_num_samples[idx] += 1
