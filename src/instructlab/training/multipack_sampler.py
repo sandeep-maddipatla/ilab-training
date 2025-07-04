@@ -178,7 +178,7 @@ def find_packing_max_batch_work_and_grad_accum(
             packing_max_batch_len = int((avg_sample_len) * samples_per_gpu)
 
     print(f'Done with find_packing_max_batch_len_and_grad_accum call')
-    return packing_max_batch_len, grad_accum
+    return packing_max_batch_work, grad_accum
 
 def work_metric(sample_lengths, multiplier=None):
     if not isinstance(sample_lengths, Iterable):
