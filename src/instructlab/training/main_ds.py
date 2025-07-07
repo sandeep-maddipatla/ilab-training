@@ -475,7 +475,7 @@ def main(args):
 
         # fallback to grad accum = 1
         # NOTE: packing max batch len will not be used
-        packing_max_batch_len = None
+        packing_max_batch_work = None
         grad_accum = 1
         args.sampler = "distributed"
 
@@ -489,7 +489,7 @@ def main(args):
         num_workers=8,
         use_dolomite=args.use_dolomite,
         flash_enabled=flash_enabled,
-        max_batch_work=args.max_batch_work,
+        max_batch_work=max_batch_work,
         packing_max_batch_work=packing_max_batch_work,
         samples_per_gpu=args.samples_per_gpu,
         sampler=args.sampler,
@@ -510,8 +510,8 @@ def main(args):
             num_workers=8,
             use_dolomite=args.use_dolomite,
             flash_enabled=flash_enabled,
-            max_batch_len=args.max_batch_len,
-            packing_max_batch_len=packing_max_batch_len,
+            max_batch_work=max_batch_work,
+            packing_max_batch_work=packing_max_batch_work,
             samples_per_gpu=args.samples_per_gpu,
             sampler=args.sampler,
             seed=args.seed,
@@ -525,7 +525,7 @@ def main(args):
                 "avg_sample_len": dataset.get_lengths().mean(),
                 "effective_batch_size": args.effective_batch_size,
                 "max_batch_len_per_gpu": args.max_batch_len,
-                "packing_max_batch_len": packing_max_batch_len,
+                "packing_max_batch_work": packing_max_batch_work,
                 "grad_accum": grad_accum,
                 "num_batches": len(train_loader),
                 "avg_samples_per_batch": len(dataset) / len(train_loader),
