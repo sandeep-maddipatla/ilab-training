@@ -36,6 +36,7 @@ import torch.distributed as dist
 
 from instructlab.training.hpu_utils import is_torch_hpu_available, bucket
 from collections.abc import Iterable
+import os
 
 
 def find_max_pack_work_with_padding(
@@ -183,7 +184,21 @@ def work_metric(sample_lengths, multiplier=None):
         sample_lengths = [sample_lengths]
     if not multiplier:
         multiplier = len(sample_lengths)
-    return max(sample_lengths) * multiplier
+
+    metric_type = os.environ.get('WORK_METRIC_TYPE', 'default')
+    wm = 0
+    if metric_type == 'm2n':
+        wm = max(sample_lengths) * max(sample_lengths) * multiplier
+    elif metric_type == 'mlgm_n':
+        wm = max(sample_lengths) * np.log2(max(sample_lengths)) * multiplier
+    elif metric_type == 'm_nlgn':
+        wm = max(sample_lengths) * multiplier * (np.log2(multiplier) if multiplier > 1 else 1)
+    elif metric_type == 'n2m':
+        wm = max(sample_lengths) * multiplier * multiplier
+    else:
+        # metric_type in ['mn', 'default']:
+        wm = max(sample_lengths) * multiplier
+    return wm
 
 @numba.njit
 def ffd_check(a: np.ndarray, c: int, n: int):
