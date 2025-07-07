@@ -185,7 +185,17 @@ def work_metric(sample_lengths, multiplier=None):
         sample_lengths = [sample_lengths]
     if not multiplier:
         multiplier = len(sample_lengths)
-    return max(sample_lengths) * multiplier
+    
+    metric_type = 'default'
+    wm = 0
+    if metric_type == 'm2n':
+        wm = max(sample_lengths) * max(sample_lengths) * multiplier
+    elif metric_type == 'mlgm_n':
+        wm = max(sample_lengths) * np.log2(max(sample_lengths)) * multiplier
+    else:
+        # metric_type in ['mn', 'default']:
+        wm = max(sample_lengths) * multiplier
+    return wm
 
 #@numba.njit
 def ffd_check(a: np.ndarray, c: int, n: int):
@@ -307,6 +317,7 @@ def allocate(
 ):
     # c, works_cumsum are expected to be generated with consistent work metrics
     def print_l(msg):
+        return
         if enable_prints and (rank == 0):
             print(msg)
     # Dynamic batch allocator, similar to Multifit
