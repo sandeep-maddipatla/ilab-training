@@ -82,6 +82,7 @@ from instructlab.training.utils import (
     save_checkpoint,
     save_hf_format_accelerate,
     set_random_seed,
+    work_metric,
 )
 import instructlab.training.data_process as dp
 

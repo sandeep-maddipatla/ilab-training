@@ -35,9 +35,7 @@ import torch
 import torch.distributed as dist
 
 from instructlab.training.hpu_utils import is_torch_hpu_available, bucket
-from collections.abc import Iterable
-import os
-
+from instructlab.training.utils import work_metric
 
 def find_max_pack_work_with_padding(
     dataset,
@@ -179,27 +177,6 @@ def find_packing_max_batch_work_and_grad_accum(
 
     return packing_max_batch_work, grad_accum
 
-def work_metric(sample_lengths, multiplier=None):
-    if not isinstance(sample_lengths, Iterable):
-        sample_lengths = [sample_lengths]
-    if not multiplier:
-        multiplier = len(sample_lengths)
-
-    metric_type = os.environ.get('WORK_METRIC_TYPE', 'default')
-    wm = 0
-    if metric_type == 'm2n':
-        wm = max(sample_lengths) * max(sample_lengths) * multiplier
-    elif metric_type == 'mlgm_n':
-        wm = max(sample_lengths) * np.log2(max(sample_lengths)) * multiplier
-    elif metric_type == 'm_nlgn':
-        wm = max(sample_lengths) * multiplier * (np.log2(multiplier) if multiplier > 1 else 1)
-    elif metric_type == 'n2m':
-        wm = max(sample_lengths) * multiplier * multiplier
-    else:
-        # metric_type in ['mn', 'default']:
-        wm = max(sample_lengths) * multiplier
-    return wm
-
 @numba.njit
 def ffd_check(a: np.ndarray, c: int, n: int):
     # First-fit-decreasing bin packing
@@ -221,7 +198,7 @@ def ffd_check(a: np.ndarray, c: int, n: int):
 
     return True
 
-#@numba.njit
+@numba.njit
 def ffd_check_padding(a: np.ndarray, c: int, n: int):
     # First-fit-decreasing bin packing
     # Check if a[] could fit in n bins with capacity c
@@ -277,7 +254,7 @@ def ffd_with_result(a: np.ndarray, c: int, start_index: int):
     return bins_result
 
 
-#@numba.njit
+@numba.njit
 def ffd_with_result_padding(a: np.ndarray, c: int, start_index: int):
     # First-fit-decreasing bin packing (with result return)
 
@@ -308,7 +285,7 @@ def ffd_with_result_padding(a: np.ndarray, c: int, start_index: int):
     return bins_result
 
 
-#@numba.njit
+@numba.njit
 def allocate(
     lengths: np.ndarray,
     works_cumsum: np.ndarray,
