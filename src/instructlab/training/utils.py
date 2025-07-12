@@ -29,6 +29,7 @@ from transformers import AutoModelForCausalLM, PreTrainedTokenizer
 import numpy as np
 import torch
 import torch.nn.functional as F
+import numba
 
 # First Party
 from instructlab.training.config import (
@@ -40,7 +41,10 @@ from instructlab.training.model import Model
 from instructlab.training.hpu_utils import is_torch_hpu_available, bucket
 
 logger = logging.getLogger("instructlab.training")
-
+metric_type_str = os.environ.get('WORK_METRIC_TYPE', 'default')
+supported_metrics = ['m2n', 'mlgm_n', 'm_nlgn', 'n2m', 'mn', 'default']
+metric_type = supported_metrics.index(metric_type_str)
+logger.info(f'Using work_metric type: {metric_type_str}')
 
 def check_valid_train_args(train_args: TrainingArgs):
     # early validation logic here
@@ -198,7 +202,7 @@ class StreamablePopen(subprocess.Popen):
                     break
 
 
-def make_collate_fn(pad_token_id, flash_enabled=True, max_batch_len=60000, device=None):
+def make_collate_fn(pad_token_id, flash_enabled=True, max_batch_work=60000, device=None):
     if flash_enabled:
 
         def pad_collate_fn(batch):
@@ -210,7 +214,7 @@ def make_collate_fn(pad_token_id, flash_enabled=True, max_batch_len=60000, devic
 
             for num_samples, item in enumerate(batch):
                 item_len = len(item["input_ids"])
-                if total_len + item_len > max_batch_len:
+                if total_len + item_len > max_batch_work:
                     break
 
                 input_ids.extend(item["input_ids"].tolist())
@@ -733,3 +737,45 @@ def load_latest_full_state(args, accelerator) -> None:
     # previous epoch is basis for current epoch.
     args.__dict__["current_epoch"] = training_metadata["current_epoch"] + 1
     args.__dict__["samples_seen"] = training_metadata["samples_seen"]
+
+@numba.njit
+def work_metric(sample_lengths: np.ndarray, multiplier=None):
+    # sample_lengths is expected to be an np.array type to be jit-compatible
+    if not multiplier:
+        multiplier = len(sample_lengths)
+
+    max = np.max
+    wm = 0
+    if metric_type == 0: # 'm2n'
+        wm = max(sample_lengths) * max(sample_lengths) * multiplier
+    elif metric_type == 1: # 'mlgm_n'
+        wm = max(sample_lengths) * np.log2(max(sample_lengths)) * multiplier
+    elif metric_type == 2: # 'm_nlgn':
+        wm = max(sample_lengths) * multiplier * (np.log2(multiplier) if multiplier > 1 else 1)
+    elif metric_type == 3: # 'n2m':
+        wm = max(sample_lengths) * multiplier * multiplier
+    else:
+        # metric_type in ['mn', 'default']:
+        wm = max(sample_lengths) * multiplier
+    return wm
+
+@numba.njit
+def work_metric(sample_length: int, multiplier=None):
+    # sample_lengths is expected to be an np.array type to be jit-compatible
+    if not multiplier:
+        multiplier = 1
+
+    wm = 0
+    if metric_type == 0: # 'm2n'
+        wm = sample_length * sample_length * multiplier
+    elif metric_type == 1: # 'mlgm_n'
+        wm = sample_length * np.log2(sample_length) * multiplier
+    elif metric_type == 2: # 'm_nlgn':
+        wm = sample_length * multiplier * (np.log2(multiplier) if multiplier > 1 else 1)
+    elif metric_type == 3: # 'n2m':
+        wm = sample_length * multiplier * multiplier
+    else:
+        # metric_type in ['mn', 'default']:
+        wm = sample_length * multiplier
+    return wm
+

@@ -35,9 +35,9 @@ import torch
 import torch.distributed as dist
 
 from instructlab.training.hpu_utils import is_torch_hpu_available, bucket
+from instructlab.training.utils import work_metric
 
-
-def find_max_pack_len_with_padding(
+def find_max_pack_work_with_padding(
     dataset,
     samples_per_minibatch,
     num_gpus,
@@ -58,7 +58,7 @@ def find_max_pack_len_with_padding(
     - The maximum batch length with padding for the given dataset.
     """
 
-    def get_effective_samples_per_minibatch(num_tokens_per_gpu):
+    def get_effective_samples_per_minibatch(work_per_gpu):
         """
         This nested function calculates the effective number of samples per minibatch for a given number of tokens per GPU.
 
@@ -76,7 +76,7 @@ def find_max_pack_len_with_padding(
             lengths = bucket_v(lengths)
 
         sampler = MultipackDistributedBatchSampler(
-            batch_max_length=num_tokens_per_gpu,
+            batch_max_work=work_per_gpu,
             lengths=lengths,
             num_replicas=torch.distributed.get_world_size(),
             rank=torch.distributed.get_rank(),
@@ -88,16 +88,16 @@ def find_max_pack_len_with_padding(
 
     samples_per_gpu = samples_per_minibatch / num_gpus
 
-    addition = int(avg_sample_len * 0.1 * samples_per_gpu)
-    packing_max_batch_len = int(avg_sample_len * samples_per_gpu)
+    addition = int(work_metric(avg_sample_len, multiplier=samples_per_gpu) * 0.1)
+    packing_max_batch_work = int(work_metric(avg_sample_len, multiplier=samples_per_gpu))
 
     avg_bs_per_minibatch = get_effective_samples_per_minibatch(
-        packing_max_batch_len + addition
+        packing_max_batch_work + addition
     )
     while avg_bs_per_minibatch <= samples_per_minibatch:
         addition *= 2
         avg_bs_per_minibatch = get_effective_samples_per_minibatch(
-            packing_max_batch_len + addition
+            packing_max_batch_work + addition
         )
 
     l = 0
@@ -105,7 +105,7 @@ def find_max_pack_len_with_padding(
     while r - l > 1:
         addition = (l + r) // 2
         avg_bs_per_minibatch = get_effective_samples_per_minibatch(
-            packing_max_batch_len + addition
+            packing_max_batch_work + addition
         )
 
         # check if simulation resulted in batch sizes close enough to goal and adjust if needed
@@ -118,14 +118,14 @@ def find_max_pack_len_with_padding(
         else:
             l = addition
 
-    return packing_max_batch_len + addition
+    return packing_max_batch_work + addition
 
 
-def find_packing_max_batch_len_and_grad_accum(
+def find_packing_max_batch_work_and_grad_accum(
     num_gpus,
     avg_sample_len,
     effective_batch_size,
-    max_batch_len_per_gpu,
+    max_batch_work_per_gpu,
     is_padding,
     dataset,
     seed,
@@ -153,19 +153,19 @@ def find_packing_max_batch_len_and_grad_accum(
       accumulation steps required to maintain the effective batch size.
     """
 
-    packing_max_batch_len = max_batch_len_per_gpu + 1
+    packing_max_batch_work = max_batch_work_per_gpu + 1
     grad_accum = 0
-    while packing_max_batch_len > max_batch_len_per_gpu:
+    while packing_max_batch_work > max_batch_work_per_gpu:
         grad_accum += 1
         samples_per_minibatch = effective_batch_size / grad_accum
         samples_per_gpu = samples_per_minibatch / num_gpus
-        if int(avg_sample_len * samples_per_gpu) < dataset.get_lengths().max():
+        if int(work_metric(avg_sample_len, multiplier=samples_per_gpu)) < work_metric(dataset.get_lengths().max()):
             raise RuntimeError(
                 f"Effective batch size is too low for multipack sampling, max sample length={dataset.get_lengths().max()} and min packing length={int(avg_sample_len * samples_per_gpu)}. "
                 "Switching to naive distributed sampling."
             )
         if is_padding:
-            packing_max_batch_len = find_max_pack_len_with_padding(
+            packing_max_batch_work = find_max_pack_work_with_padding(
                 dataset,
                 samples_per_minibatch,
                 num_gpus,
@@ -175,8 +175,7 @@ def find_packing_max_batch_len_and_grad_accum(
         else:
             packing_max_batch_len = int((avg_sample_len) * samples_per_gpu)
 
-    return packing_max_batch_len, grad_accum
-
+    return packing_max_batch_work, grad_accum
 
 @numba.njit
 def ffd_check(a: np.ndarray, c: int, n: int):
@@ -199,7 +198,6 @@ def ffd_check(a: np.ndarray, c: int, n: int):
 
     return True
 
-
 @numba.njit
 def ffd_check_padding(a: np.ndarray, c: int, n: int):
     # First-fit-decreasing bin packing
@@ -218,9 +216,7 @@ def ffd_check_padding(a: np.ndarray, c: int, n: int):
         not_found = True
         for idx in range(n):
             # Calculate the new capacity if size is added to the bin
-            new_capacity = max(bins_max_lengths[idx], size) * (
-                bins_num_samples[idx] + 1
-            )
+            new_capacity = work_metric(max(bins_max_lengths[idx], size), multiplier = bins_num_samples[idx] + 1)
             if new_capacity <= c:
                 bins_max_lengths[idx] = max(bins_max_lengths[idx], size)
                 bins_num_samples[idx] += 1
@@ -273,9 +269,7 @@ def ffd_with_result_padding(a: np.ndarray, c: int, start_index: int):
         add_new = True
         for idx in range(len(bins_max_lengths)):
             # Calculate the new capacity if size is added to the bin
-            new_capacity = max(bins_max_lengths[idx], size) * (
-                bins_num_samples[idx] + 1
-            )
+            new_capacity = work_metric(max(bins_max_lengths[idx], size), multiplier = bins_num_samples[idx] + 1)
             if new_capacity <= c:
                 bins_max_lengths[idx] = max(bins_max_lengths[idx], size)
                 bins_num_samples[idx] += 1
@@ -294,16 +288,17 @@ def ffd_with_result_padding(a: np.ndarray, c: int, start_index: int):
 @numba.njit
 def allocate(
     lengths: np.ndarray,
-    lengths_cumsum: np.ndarray,
+    works_cumsum: np.ndarray,
     rank: int,
     c: int,
     n: int,
     padding: bool = True,
 ):
+    # c, works_cumsum are expected to be generated with consistent work metrics
+
     # Dynamic batch allocator, similar to Multifit
     # https://en.wikipedia.org/wiki/Multifit_algorithm
     # ~99.5% efficiency on OpenChat training set (12 * 2048 ctx len)
-
     s = 0
     start_index = 0
     result = []
@@ -311,8 +306,7 @@ def allocate(
     while True:
         # binary search [l, r)
         l = 1
-        r = 1 + np.searchsorted(lengths_cumsum[start_index:], s + c * n, "right")
-
+        r = 1 + np.searchsorted(works_cumsum[start_index:], s + c * n, "right")
         while r - l > 1:
             m = (l + r) // 2
             if padding:
@@ -338,7 +332,7 @@ def allocate(
             break
 
         start_index += l
-        s = lengths_cumsum[start_index - 1]
+        s = works_cumsum[start_index - 1]
 
         # add local rank
         result.append(batch[rank])
@@ -353,7 +347,7 @@ class MultipackDistributedBatchSampler(Sampler):
 
     def __init__(
         self,
-        batch_max_length: int,
+        batch_max_work: int,
         lengths: List[int],
         num_replicas: Optional[int] = None,
         rank: Optional[int] = None,
@@ -374,7 +368,7 @@ class MultipackDistributedBatchSampler(Sampler):
         self.rank = rank
         self.seed = seed
 
-        self.batch_max_length = batch_max_length
+        self.batch_max_work = batch_max_work
         self.lengths = lengths
         assert isinstance(self.lengths, np.ndarray)
 
@@ -394,21 +388,24 @@ class MultipackDistributedBatchSampler(Sampler):
         )
 
         # remove indices where the entries are longer than batch max length
-        indices = indices[self.lengths[indices] <= self.batch_max_length]
+        '''
+        indices = indices[work_metric(self.lengths[indices]) <= self.batch_max_work]
+        print(f'{len(indices)=}')
         if len(indices) < len(self.lengths):
             warnings.warn(
-                "Dropping %d samples longer than batch_max_length. Ensure that the right max_batch_length is used during data processing.",
+                "Dropping %d samples longer than batch_max_work. Ensure that the right max_batch_length is used during data processing.",
                 len(self.lengths) - len(indices),
             )
-
+        '''
         lengths = self.lengths[indices]
-        lengths_cumsum = np.cumsum(lengths)
+        works = [work_metric(ll, multiplier=1) for ll in lengths]
+        works_cumsum = np.cumsum(works)
 
         batches, total_used, total_slots = allocate(
             lengths=lengths,
-            lengths_cumsum=lengths_cumsum,
+            works_cumsum=works_cumsum,
             rank=self.rank,
-            c=self.batch_max_length,
+            c=self.batch_max_work,
             n=self.num_replicas,
             padding=self.padding,
         )
