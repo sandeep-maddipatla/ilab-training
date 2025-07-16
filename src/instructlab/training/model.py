@@ -5,38 +5,33 @@ import logging
 import math
 import os
 import torch
+import inspect
 
 logger = logging.getLogger("instructlab.training")
-
+logger.info('\nTEST TEST TEST TEST\n')
 class Instrumented_HpuBackend:
-    def graph_break_hook(self, frame, reason):
-        graph_info = {}
-        graph_info['graph_id'] = self.graph_break_count
-        graph_info['frame'] = frame.f_code.co_name
-        graph_info['file'] = frame.f_code.co_filename
-        graph_info['line'] = frame.f_lineno
-        graph_info['reason'] = reason
-        self.graphs.append(graph_info)
-        self.graph_break_count += 1
-
-    def __init__(self, **options):
+    def __init__(self):
         self.true_backend = torch._dynamo.backends.registry.lookup_backend('hpu_backend')
-        self.options = options
         self.call_count = 0
         self.reset_count = 0
         self.epoch = 0
         self.rank = 0
-        self.graph_break_count = 0
         self.graphs = []
+        self.graph_op_counts = []
         self.all_results = []
-        torch._dynamo.graph_break_hook = self.graph_break_hook
-        logger.info(f'Using instrumented HPU backend with options: {self.options}')
-
+        logger.info(f'\nInitiated instrumented HPU backend\n')
+    
     def __call__(self, gm: torch.fx.GraphModule, example_inputs, **compile_options):
         self.call_count += 1
-        all_options = {**self.options, **compile_options}
+        op_count = 0
+        for node in gm.graph.nodes:
+            if "call" in node.op:
+                op_count += 1
+        self.graphs.append(gm)
+        self.graph_op_counts.append(op_count)
+
         # Delegate to the actual backend
-        return self.true_backend(gm, example_inputs, **all_options)
+        return self.true_backend(gm, example_inputs, **compile_options)
 
     def reset(self, include_reset_count=False):
         result = {}
@@ -44,8 +39,8 @@ class Instrumented_HpuBackend:
         result['epoch'] = self.epoch
         result['id'] = self.reset_count
         result['call_count'] = self.call_count
-        result['graph_break_count'] = self.graph_break_count
         result['graphs'] = self.graphs
+        result['op_counts'] = self.graph_op_counts
         if self.call_count != 0:
             self.all_results.append(result)
 
@@ -54,8 +49,8 @@ class Instrumented_HpuBackend:
         else:
             self.reset_count += 1
         self.call_count = 0
-        self.graph_break_count = 0
         self.graphs = []
+        self.graph_op_counts = []
     
     def set_epoch(self, epoch):
         self.epoch = epoch
@@ -64,10 +59,12 @@ class Instrumented_HpuBackend:
     def set_rank(self, rank):
         self.rank = rank
 
-    def print_result(self, r):
-        logger.info(f"[IHB] Rank={r['rank']}, Epoch={r['id']}, call_count={r['call_count']}, graph_break_count={r['graph_break_count']}")
-        for g in r['graphs']:
-            logger.info(f"    Rank={r['rank']}, Graph ID={g['graph_id']}, Frame={g['frame']}, File={g['file']}, Line={g['line']}, Reason={g['reason']}")
+    def print_result(self, r, print_graphs=False):
+        logger.info(f"[IHB] Rank={r['rank']}, Epoch={r['id']}, call_count={r['call_count']}")
+        for g, op_count in zip(r['graphs'], r['op_counts']):
+            logger.info(f"[IHB]    Rank={r['rank']}, {op_count=}")
+            if print_graphs:
+                g.print_readable()
    
     def print_all_results(self, save_pending_results=True):
         # issue reset to add any pending results to the all_result list
@@ -158,10 +155,13 @@ class Model:
             torch._dynamo.config.accumulated_cache_size_limit = 2*cache_size_limit
 
             backend = instrumented_backend if os.getenv("USE_INSTRUMENTED_BACKEND", False) else 'hpu_backend'
-            self.model = torch.compile(self.model, backend=backend, dynamic=False)
+            #self.model = torch.compile(self.model, backend=backend, dynamic=False)
+            count=0
             for layer in self.model.model.layers:
+                count += 1
                 layer.compile(backend=backend, dynamic=False) 
-
+            logger.info(f'Compiled {count} layers of model separately')
+        
         self.reconcile_tokenizer()
         if self.lora_config:
             self.model = self.prepare_peft_model()
