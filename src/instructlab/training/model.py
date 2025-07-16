@@ -41,8 +41,9 @@ class Instrumented_HpuBackend:
         result['call_count'] = self.call_count
         result['graphs'] = self.graphs
         result['op_counts'] = self.graph_op_counts
-        if self.call_count != 0:
-            self.all_results.append(result)
+
+        # Add a result even if 0 call counts
+        self.all_results.append(result)
 
         if include_reset_count:
             self.reset_count = 0
