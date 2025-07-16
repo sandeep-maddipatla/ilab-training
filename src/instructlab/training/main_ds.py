@@ -68,6 +68,7 @@ from instructlab.training.model import (
     LigerModel,
     Model,
     setup_optimizer,
+    instrumented_backend,
 )
 from instructlab.training.multipack_sampler import (
     find_packing_max_batch_len_and_grad_accum,
@@ -98,6 +99,7 @@ def train(
     global_step = 1
     local_rank = int(os.environ["LOCAL_RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
+    instrumented_backend.set_rank(local_rank)
 
     metric_logger = logging.getLogger("instructlab.training.metrics")
     base_logger = logging.getLogger("instructlab.training")
@@ -129,6 +131,8 @@ def train(
         num_epoch_steps = len(accelerator.train_loader)
         if local_rank == 0:
             inner_pb = tqdm(range(num_epoch_steps), desc=f"Epoch {epoch}")
+        
+        instrumented_backend.set_epoch(epoch)
 
         # blast through the batches in the train loader up to the last step within the epoch. 
         for batch in accelerator.train_loader:
@@ -277,6 +281,8 @@ def train(
             base_logger.debug("RANK (%d) waiting at post-save barrier.", local_rank)
             torch.distributed.barrier()
 
+        instrumented_backend.reset()
+
     if args.save_last:
         save_hf_format_accelerate(
             args,
@@ -286,7 +292,7 @@ def train(
             samples_seen,
             is_lora=bool(args.lora_r),
         )
-
+    instrumented_backend.print_all_results()
 
 # This function makes an effort to stick to a default value from torch library,
 # whatever it may be. That's why we don't just set to the current (as of the

@@ -4,8 +4,79 @@ import functools
 import logging
 import math
 import os
+import torch
 
 logger = logging.getLogger("instructlab.training")
+
+class Instrumented_HpuBackend:
+    def graph_break_hook(self, frame, reason):
+        graph_info = {}
+        graph_info['graph_id'] = self.graph_break_count
+        graph_info['frame'] = frame.f_code.co_name
+        graph_info['file'] = frame.f_code.co_filename
+        graph_info['line'] = frame.f_lineno
+        graph_info['reason'] = reason
+        self.graphs.append(graph_info)
+        self.graph_break_count += 1
+
+    def __init__(self, **options):
+        self.true_backend = torch._dynamo.backends.registry.lookup_backend('hpu_backend')
+        self.options = options
+        self.call_count = 0
+        self.reset_count = 0
+        self.epoch = 0
+        self.rank = 0
+        self.graph_break_count = 0
+        self.graphs = []
+        self.all_results = []
+        torch._dynamo.graph_break_hook = self.graph_break_hook
+        logger.info(f'Using instrumented HPU backend with options: {self.options}')
+
+    def __call__(self, gm: torch.fx.GraphModule, example_inputs, **compile_options):
+        self.call_count += 1
+        all_options = {**self.options, **compile_options}
+        # Delegate to the actual backend
+        return self.true_backend(gm, example_inputs, **all_options)
+
+    def reset(self, include_reset_count=False):
+        result = {}
+        result['rank'] = self.rank
+        result['epoch'] = self.epoch
+        result['id'] = self.reset_count
+        result['call_count'] = self.call_count
+        result['graph_break_count'] = self.graph_break_count
+        result['graphs'] = self.graphs
+        if self.call_count != 0:
+            self.all_results.append(result)
+
+        if include_reset_count:
+            self.reset_count = 0
+        else:
+            self.reset_count += 1
+        self.call_count = 0
+        self.graph_break_count = 0
+        self.graphs = []
+    
+    def set_epoch(self, epoch):
+        self.epoch = epoch
+        logger.info(f'Setting epoch to {self.epoch}')
+    
+    def set_rank(self, rank):
+        self.rank = rank
+
+    def print_result(self, r):
+        logger.info(f"[IHB] Rank={r['rank']}, Epoch={r['id']}, call_count={r['call_count']}, graph_break_count={r['graph_break_count']}")
+        for g in r['graphs']:
+            logger.info(f"    Rank={r['rank']}, Graph ID={g['graph_id']}, Frame={g['frame']}, File={g['file']}, Line={g['line']}, Reason={g['reason']}")
+   
+    def print_all_results(self, save_pending_results=True):
+        # issue reset to add any pending results to the all_result list
+        if save_pending_results:
+            self.reset()
+        for r in self.all_results:
+            self.print_result(r)
+ 
+instrumented_backend = Instrumented_HpuBackend()
 
 try:
     # Third Party
@@ -85,9 +156,11 @@ class Model:
             cache_size_limit = 10*1000
             torch._dynamo.config.cache_size_limit = cache_size_limit
             torch._dynamo.config.accumulated_cache_size_limit = 2*cache_size_limit
-            self.model = torch.compile(self.model, backend="hpu_backend", dynamic=False)
+
+            backend = instrumented_backend if os.getenv("USE_INSTRUMENTED_BACKEND", False) else 'hpu_backend'
+            self.model = torch.compile(self.model, backend=backend, dynamic=False)
             for layer in self.model.model.layers:
-                layer.compile(backend="hpu_backend", dynamic=False) 
+                layer.compile(backend=backend, dynamic=False) 
 
         self.reconcile_tokenizer()
         if self.lora_config:
