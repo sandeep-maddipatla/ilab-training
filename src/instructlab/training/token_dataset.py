@@ -86,6 +86,30 @@ def setup_dataset(
         dataset = TokenDataset(data_path)
     return dataset
 
+def print_batches(dataloader, rank=0, epoch=0,max_batches=50):
+    """
+    Print the names and shapes of all tensor inputs across the first few batches.
+    """
+    print("Printing input tensor shapes for batches:")
+    for batch_idx, batch in enumerate(dataloader):
+        if batch_idx >= max_batches:
+            break
+        print(f"[BATCH_PRINT] rank:{rank}, epoch: {epoch},  Batch {batch_idx}:")
+        if isinstance(batch, dict):
+            for name, tensor in batch.items():
+                if hasattr(tensor, "shape"):
+                    print(f"[BATCH_PRINT] rank:{rank}, epoch: {epoch},   {name}: {tensor.shape}")
+                else:
+                    print(f"[BATCH_PRINT] rank:{rank}, epoch: {epoch},   {name}: {type(tensor)}")
+        elif isinstance(batch, (list, tuple)):
+            for i, item in enumerate(batch):
+                if hasattr(item, "shape"):
+                    print(f"[BATCH_PRINT] rank:{rank}, epoch: {epoch},   input_{i}: {item.shape}")
+                else:
+                    print(f" [BATCH_PRINT] rank:{rank}, epoch: {epoch},  input_{i}: {type(item)}")
+        else:
+            print(f"[BATCH_PRINT] rank:{rank}, epoch: {epoch},   batch: {type(batch)}")
+        print(f"[BATCH_PRINT] rank:{rank}, epoch: {epoch}" + "-" * 40)
 
 def setup_dataloader(
     dataset: Dataset,

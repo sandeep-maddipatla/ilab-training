@@ -73,7 +73,7 @@ from instructlab.training.model import (
 from instructlab.training.multipack_sampler import (
     find_packing_max_batch_len_and_grad_accum,
 )
-from instructlab.training.token_dataset import setup_dataloader, setup_dataset
+from instructlab.training.token_dataset import setup_dataloader, setup_dataset, print_batches
 from instructlab.training.tokenizer_utils import setup_tokenizer
 from instructlab.training.utils import (
     StreamablePopen,
@@ -134,6 +134,8 @@ def train(
             inner_pb = tqdm(range(num_epoch_steps), desc=f"Epoch {epoch}")
         
         instrumented_backend.set_epoch(epoch)
+
+        print_batches(accelerator.train_loader, rank=local_rank, epoch=epoch)
 
         # blast through the batches in the train loader up to the last step within the epoch. 
         for batch in accelerator.train_loader:
