@@ -73,7 +73,7 @@ from instructlab.training.model import (
 from instructlab.training.multipack_sampler import (
     find_packing_max_batch_len_and_grad_accum,
 )
-from instructlab.training.token_dataset import setup_dataloader, setup_dataset, print_batches
+from instructlab.training.token_dataset import setup_dataloader, setup_dataset, process_batches
 from instructlab.training.tokenizer_utils import setup_tokenizer
 from instructlab.training.utils import (
     StreamablePopen,
@@ -82,6 +82,7 @@ from instructlab.training.utils import (
     save_checkpoint,
     save_hf_format_accelerate,
     set_random_seed,
+    pad_batch,
 )
 import instructlab.training.data_process as dp
 
@@ -135,7 +136,7 @@ def train(
         
         instrumented_backend.set_epoch(epoch)
 
-        print_batches(accelerator.train_loader, rank=local_rank, epoch=epoch)
+        batch_size_buckets = process_batches(accelerator.train_loader, rank=local_rank, epoch=epoch)
 
         # blast through the batches in the train loader up to the last step within the epoch. 
         for batch in accelerator.train_loader:
@@ -146,6 +147,7 @@ def train(
                     inner_pb.update(1)
                 continue
             start = time.time()
+            batch = pad_batch(batch, batch_size_buckets, rank=local_rank)
             num_loss_counted_tokens = float(
                 torch.tensor([batch.pop("num_loss_counted_tokens")])
             )

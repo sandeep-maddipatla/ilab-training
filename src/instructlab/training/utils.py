@@ -37,7 +37,7 @@ from instructlab.training.config import (
     TrainingArgs,
 )
 from instructlab.training.model import Model
-from instructlab.training.hpu_utils import is_torch_hpu_available, bucket
+from instructlab.training.hpu_utils import is_torch_hpu_available, bucket, get_bucketed_size
 
 logger = logging.getLogger("instructlab.training")
 
@@ -285,6 +285,33 @@ def make_collate_fn(pad_token_id, flash_enabled=True, max_batch_len=60000, devic
 
     return pad_collate_fn
 
+def pad_batch(batch, bs_buckets):
+    # Reducing dynamicity by padding batch to available buckets
+    # We add the last sample in the batch
+    batch_size = batch['num_samples']   
+    target_batch_size = get_bucketed_size(batch_size, bs_buckets)
+    if target_batch_size == batch_size:
+        # Nothing to do
+        return batch
+
+    item_to_pad = {
+        'input_ids': batch['input_ids'][-1].unsqueeze(0),
+        'attention_mask': batch['attention_mask'][-1].unsqueeze(0),
+        'labels': batch['labels'][-1].unsqueeze(0)
+    }
+    padded_item = deepcopy(item_to_pad)
+    padded_item["attention_mask"] = torch.zeros_like(padded_item["attention_mask"])
+    padded_item["labels"] = torch.full_like(padded_item["labels"], -100)
+    
+    while batch_size < target_batch_size:
+        batch['input_ids'] = torch.cat((batch['input_ids'], padded_item['input_ids']), dim=0)
+        batch['attention_mask'] = torch.cat((batch['attention_mask'], padded_item['attention_mask']), dim=0)
+        batch['labels'] = torch.cat((batch['labels'], padded_item['labels']), dim=0)
+        # Not updating num_loss_counted_tokens as we are only adding fake samples that shouldn't be counted anyway
+        # Same goes for total_length, num_samples
+        batch_size += 1
+    return batch
+    
 
 def convert_loss_to_reduce_sum(model):
     """

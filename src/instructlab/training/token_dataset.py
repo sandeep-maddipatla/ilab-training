@@ -11,9 +11,9 @@ import torch
 
 # First Party
 from instructlab.training.multipack_sampler import MultipackDistributedBatchSampler
-from instructlab.training.utils import log_rank_0, make_collate_fn
+from instructlab.training.utils import log_rank_0, make_collate_fn, pad_batch
 
-from instructlab.training.hpu_utils import bucket
+from instructlab.training.hpu_utils import bucket, batch_bucket
 
 class TokenDataset(Dataset):
     def __init__(self, data_path):
@@ -110,6 +110,27 @@ def print_batches(dataloader, rank=0, epoch=0,max_batches=50):
         else:
             print(f"[BATCH_PRINT] rank:{rank}, epoch: {epoch},   batch: {type(batch)}")
         print(f"[BATCH_PRINT] rank:{rank}, epoch: {epoch}" + "-" * 40)
+
+def process_batches(dataloader, rank=0, epoch=0):
+    """
+    Process the batches to determine the bucketed sizes.
+    """
+    print_batches(dataloader, rank=rank, epoch=epoch)
+    
+    lengths = []
+
+    for batch_idx, batch in enumerate(dataloader):
+        if isinstance(batch, dict):
+            lengths.append(batch["input_ids"].shape[0])
+        elif isinstance(batch, (list, tuple)):
+            lengths.append([item.shape[0] for item in batch if hasattr(item, "shape")])
+    
+    lengths = np.array(lengths)
+    bucketed_sizes = batch_bucket(lengths)
+    
+    print(f"[BATCH_PRINT] rank:{rank} epoch:{epoch}, lengths={lengths}, Bucketed sizes: {bucketed_sizes}")
+    
+    return bucketed_sizes
 
 def setup_dataloader(
     dataset: Dataset,

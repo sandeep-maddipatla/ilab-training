@@ -1,6 +1,6 @@
-import torch
+#import torch
 from functools import lru_cache
-
+import numpy as np
 
 @lru_cache(maxsize=None)
 def is_torch_hpu_available() -> bool:
@@ -11,7 +11,7 @@ def is_torch_hpu_available() -> bool:
     return True
 
 
-def simple_bucket(length):
+def simple_bucket(length, min_limit = 4):
     """
     This bucket algorithm merely relies on the given number instead of based on
     slicing the known (min, max) range for several reasons:
@@ -40,10 +40,33 @@ def simple_bucket(length):
         msb += 1
         l = l // 2
 
-    align = (1 << (msb - 4)) if msb >= 4 else 1
-
+    align = (1 << (msb - min_limit)) if msb >= min_limit else 1
     return (length + align - 1) // align * align
-
 
 def bucket(length):
     return simple_bucket(length)
+
+def batch_bucket(sizes, num_buckets=3):
+    """
+    Takes a 1D array and, if it has more than 3 unique values,
+    buckets them into 3 unique values (low, mid, high).
+    Returns a new array with the same shape.
+    """
+    arr = np.asarray(sizes)
+    unique = np.unique(arr)
+
+    buckets = np.unique(
+        np.percentile(
+            arr,
+            np.linspace(0, 100, num_buckets + 1),
+            interpolation="lower",
+        )[1:]
+    )
+
+    return buckets
+
+def get_bucketed_size(size, buckets):
+    for i, _ in enumerate(buckets):
+        if buckets[i] >= size:
+            return buckets[i]
+    return buckets[-1]  # Return the last bucket if size exceeds all defined buckets
