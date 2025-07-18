@@ -44,14 +44,12 @@ def simple_bucket(length, min_limit = 4):
     return (length + align - 1) // align * align
 
 def bucket(length):
-    return simple_bucket(length)
+    return simple_bucket(length, min_limit=3)
 
 def batch_bucket(sizes, num_buckets=3):
-    """
-    Takes a 1D array and, if it has more than 3 unique values,
-    buckets them into 3 unique values (low, mid, high).
-    Returns a new array with the same shape.
-    """
+    if num_buckets <= 0:
+        return None
+
     arr = np.asarray(sizes)
     unique = np.unique(arr)
 
@@ -66,6 +64,8 @@ def batch_bucket(sizes, num_buckets=3):
     return buckets
 
 def get_bucketed_size(size, buckets):
+    if buckets == None:
+        return(simple_bucket(size, min_limit=3))
     for i, _ in enumerate(buckets):
         if buckets[i] >= size:
             return buckets[i]

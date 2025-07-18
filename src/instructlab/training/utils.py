@@ -285,7 +285,7 @@ def make_collate_fn(pad_token_id, flash_enabled=True, max_batch_len=60000, devic
 
     return pad_collate_fn
 
-def pad_batch(batch, bs_buckets):
+def pad_batch(batch, bs_buckets, rank=0):
     # Reducing dynamicity by padding batch to available buckets
     # We add the last sample in the batch
     batch_size = batch['num_samples']   
