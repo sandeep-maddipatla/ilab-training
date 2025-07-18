@@ -159,12 +159,14 @@ class Model:
             torch._dynamo.config.accumulated_cache_size_limit = 2*cache_size_limit
 
             backend = instrumented_backend if os.getenv("USE_INSTRUMENTED_BACKEND", False) else 'hpu_backend'
-            dynamic_setting = False
+            dynamic_setting = None
             self.model = torch.compile(self.model, backend=backend, dynamic=dynamic_setting)
             count=0
+            '''
             for layer in self.model.model.layers:
                 count += 1
                 layer.compile(backend=backend, dynamic=dynamic_setting) 
+            '''
             logger.info(f'Compiled {count} layers of model separately')
 
         

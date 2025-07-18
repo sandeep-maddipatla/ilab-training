@@ -118,19 +118,23 @@ def process_batches(dataloader, rank=0, epoch=0):
     print_batches(dataloader, rank=rank, epoch=epoch)
     
     batch_sizes = []
+    lengths = []
 
     for batch_idx, batch in enumerate(dataloader):
         if isinstance(batch, dict):
             batch_sizes.append(batch["input_ids"].shape[0])
+            lengths.append(batch["input_ids"].shape[1])
         elif isinstance(batch, (list, tuple)):
             batch_sizes.append([item.shape[0] for item in batch if hasattr(item, "shape")])
-    
+            lengths.append([item.shape[1] for item in batch if hasattr(item, "shape")])
+
     batch_sizes = np.array(batch_sizes)
     bucketed_sizes = batch_bucket(batch_sizes, num_buckets=0) #Disable percentile based bucketing by num_buckets=0
-    
-    print(f"[BATCH_PRINT] rank:{rank} epoch:{epoch}, sizes={batch_sizes}, Bucketed sizes: {bucketed_sizes}")
-    
-    return bucketed_sizes
+    bs_min_max = (min(batch_sizes), max(batch_sizes))
+    len_min_max = (min(lengths), max(lengths))
+
+    print(f"[BATCH_PRINT] rank:{rank} epoch:{epoch}, sizes: {batch_sizes}, bs_min_max: {bs_min_max}, len_min_max: {len_min_max}, Bucketed sizes: {bucketed_sizes}")
+    return bucketed_sizes, bs_min_max, len_min_max
 
 def setup_dataloader(
     dataset: Dataset,
