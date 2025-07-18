@@ -147,7 +147,11 @@ def train(
                     inner_pb.update(1)
                 continue
             start = time.time()
-            batch = pad_batch(batch, batch_size_buckets, rank=local_rank)
+
+            batch_size_padding_enable = True
+            if batch_size_padding_enable:
+                batch = pad_batch(batch, batch_size_buckets, rank=local_rank)
+
             num_loss_counted_tokens = float(
                 torch.tensor([batch.pop("num_loss_counted_tokens")])
             )

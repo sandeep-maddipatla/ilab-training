@@ -126,7 +126,7 @@ def process_batches(dataloader, rank=0, epoch=0):
             batch_sizes.append([item.shape[0] for item in batch if hasattr(item, "shape")])
     
     batch_sizes = np.array(batch_sizes)
-    bucketed_sizes = batch_bucket(batch_sizes, num_buckets=0)
+    bucketed_sizes = batch_bucket(batch_sizes, num_buckets=0) #Disable percentile based bucketing by num_buckets=0
     
     print(f"[BATCH_PRINT] rank:{rank} epoch:{epoch}, sizes={batch_sizes}, Bucketed sizes: {bucketed_sizes}")
     
