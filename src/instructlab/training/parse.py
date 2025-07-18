@@ -72,4 +72,4 @@ with open("result.log", "r") as file:
 
     for epoch in result_dict.keys():
         r = result_dict[epoch]
-        print(f"Epoch: {epoch}, Steps: {r["steps"]}, Time: {r["epoch_time"]}, s/it: {r["seconds_per_it"]}")
+        print(f'Epoch: {epoch}, Steps: {r["steps"]}, Time: {r["epoch_time"]}, s/it: {r["seconds_per_it"]}')
