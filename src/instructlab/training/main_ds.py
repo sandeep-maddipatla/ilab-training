@@ -88,6 +88,11 @@ import instructlab.training.data_process as dp
 
 logger = logging.getLogger(__name__)
 
+def get_env_bool(varname, default=True):
+    val = os.getenv(varname)
+    if val is None:
+        return default
+    return val.lower() in ("1", "true", "yes", "on")
 
 def train(
     args,
@@ -148,7 +153,8 @@ def train(
                 continue
             start = time.time()
 
-            batch_size_padding_enable = True
+            batch_size_padding_enable = get_env_bool("BATCH_SIZE_PADDING_ENABLE", True)
+            print('batch_size_padding_enable:', batch_size_padding_enable)
             if batch_size_padding_enable:
                 batch = pad_batch(batch, batch_size_buckets, rank=local_rank)
 
