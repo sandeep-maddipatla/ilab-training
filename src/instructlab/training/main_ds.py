@@ -33,7 +33,7 @@ except ImportError:
             UserWarning,
         )
 
-from instructlab.training.hpu_utils import is_torch_hpu_available, get_bucketed_size
+from instructlab.training.hpu_utils import is_torch_hpu_available
 
 if is_torch_hpu_available():
     import habana_frameworks.torch.core as htcore
@@ -94,16 +94,6 @@ def get_env_bool(varname, default=True):
         return default
     return val.lower() in ("1", "true", "yes", "on")
 
-def batch_mark_dynamic(batch, bs_min_max, len_min_max, batch_size_buckets=None):
-    bs_min = get_bucketed_size(bs_min_max[0], batch_size_buckets)
-    bs_max = get_bucketed_size(bs_min_max[1], batch_size_buckets)
-    torch._dynamo.mark_dynamic(batch['input_ids'], 0, min=bs_min, max=bs_max)
-    torch._dynamo.mark_dynamic(batch['input_ids'], 1, min=len_min_max[0], max=len_min_max[1])
-    torch._dynamo.mark_dynamic(batch['labels'], 0, min=bs_min, max=bs_max)
-    torch._dynamo.mark_dynamic(batch['labels'], 1, min=len_min_max[0], max=len_min_max[1])
-    torch._dynamo.mark_dynamic(batch['attention_mask'], 0, min=bs_min, max=bs_max)
-    torch._dynamo.mark_dynamic(batch['attention_mask'], 1, min=len_min_max[0], max=len_min_max[1])
-
 def train(
     args,
     model: Model,
@@ -151,7 +141,7 @@ def train(
         
         instrumented_backend.set_epoch(epoch)
 
-        batch_size_buckets, bs_min_max, len_min_max = process_batches(accelerator.train_loader, rank=local_rank, epoch=epoch)
+        batch_size_buckets = process_batches(accelerator.train_loader, rank=local_rank, epoch=epoch)
 
         # blast through the batches in the train loader up to the last step within the epoch. 
         for batch in accelerator.train_loader:
@@ -164,12 +154,10 @@ def train(
             start = time.time()
 
             batch_size_padding_enable = get_env_bool("BATCH_SIZE_PADDING_ENABLE", True)
-            print(f'rank={local_rank}, {epoch=}, {batch_size_padding_enable=}, {bs_min_max=}, {len_min_max=}')
+            print('batch_size_padding_enable:', batch_size_padding_enable)
             if batch_size_padding_enable:
                 batch = pad_batch(batch, batch_size_buckets, rank=local_rank)
 
-            batch_mark_dynamic(batch, bs_min_max, len_min_max, batch_size_buckets)
- 
             num_loss_counted_tokens = float(
                 torch.tensor([batch.pop("num_loss_counted_tokens")])
             )
