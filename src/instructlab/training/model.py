@@ -10,7 +10,7 @@ import inspect
 logger = logging.getLogger("instructlab.training")
 logger.info('\nTEST TEST TEST TEST\n')
 class Instrumented_HpuBackend:
-    def __init__(self):
+    def __init__(self, default_options={}):
         self.true_backend = torch._dynamo.backends.registry.lookup_backend('hpu_backend')
         self.call_count = 0
         self.reset_count = 0
@@ -19,7 +19,8 @@ class Instrumented_HpuBackend:
         self.graphs = []
         self.graph_op_counts = []
         self.all_results = []
-        logger.info(f'\nInitiated instrumented HPU backend\n')
+        self.default_options = default_options
+        logger.info(f'\nInitiated instrumented HPU backend with options: {self.default_options}\n')
     
     def __call__(self, gm: torch.fx.GraphModule, example_inputs, **compile_options):
         self.call_count += 1
@@ -29,11 +30,12 @@ class Instrumented_HpuBackend:
                 op_count += 1
         self.graphs.append(gm)
         self.graph_op_counts.append(op_count)
-        options = { 
+        options = {
+            **self.default_options,
             **compile_options, 
-            # "force_static_compile": True,
-            }
+           }
         # Delegate to the actual backend
+        logger.info(f'calling backend with options: {options}')
         return self.true_backend(gm, example_inputs, **options)
 
     def reset(self, include_reset_count=False):
@@ -159,12 +161,12 @@ class Model:
             torch._dynamo.config.accumulated_cache_size_limit = 2*cache_size_limit
 
             backend = instrumented_backend if os.getenv("USE_INSTRUMENTED_BACKEND", False) else 'hpu_backend'
-            dynamic_setting = False
-            self.model = torch.compile(self.model, backend=backend, dynamic=dynamic_setting)
+            dynamic_setting = None
+            self.model = torch.compile(self.model, backend=backend, dynamic=dynamic_setting, options={"force_static_compile": True})
             count=0
             for layer in self.model.model.layers:
                 count += 1
-                layer.compile(backend=backend, dynamic=dynamic_setting) 
+                layer.compile(backend=backend, dynamic=dynamic_setting,  options={"force_static_compile": True}) 
             logger.info(f'Compiled {count} layers of model separately')
 
         
