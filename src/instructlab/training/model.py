@@ -161,13 +161,19 @@ class Model:
             torch._dynamo.config.accumulated_cache_size_limit = 2*cache_size_limit
 
             backend = instrumented_backend if os.getenv("USE_INSTRUMENTED_BACKEND", False) else 'hpu_backend'
-            dynamic_setting = None
-            self.model = torch.compile(self.model, backend=backend, dynamic=dynamic_setting, options={"force_static_compile": True})
-            count=0
-            for layer in self.model.model.layers:
-                count += 1
-                layer.compile(backend=backend, dynamic=dynamic_setting,  options={"force_static_compile": True}) 
-            logger.info(f'Compiled {count} layers of model separately')
+            dynamic_setting = os.getenv("DYNAMIC_SETTING", 'False')
+            dynamic_setting = None if dynamic_setting == 'None' else True if dynamic_setting in ['True', '1'] else False
+            options = {"force_static_compile": True} if not dynamic_setting == False else {}
+            use_layer_compile = os.getenv('USE_LAYER_COMPILE', 'True').lower() in ['true', '1']
+            logger.info(f'Torch Compile with {backend=}, {dynamic_setting=}, {options=}, {use_layer_compile=}')
+            
+            self.model = torch.compile(self.model, backend=backend, dynamic=dynamic_setting, options=options)
+            if use_layer_compile:
+                count = 0
+                for layer in self.model.model.layers:
+                    count += 1
+                    layer.compile(backend=backend, dynamic=dynamic_setting,  options=options)
+                logger.info(f'Compiled {count} layers of model separately')
 
         
         self.reconcile_tokenizer()
