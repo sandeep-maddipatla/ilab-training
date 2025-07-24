@@ -15,7 +15,7 @@ from instructlab.training.config import (  # Adjust this import if needed
 
 # Local
 from .model import Model
-
+import os
 
 class Accelerator:
     def __init__(
@@ -80,9 +80,6 @@ class Accelerator:
             **accel_args,
         )
         self.accelerator.even_batches = False
-
-        new_m = self.accelerator.prepare(model.model)
-        self.model.update_model(new_m)
 
     def prepare_with_optimizer(
         self,
@@ -159,12 +156,24 @@ class Accelerator:
         prefetch_policy = (
             BackwardPrefetch.BACKWARD_POST if is_lora else BackwardPrefetch.BACKWARD_PRE
         )
+
+        fsdp_options = {
+            "auto_wrap_policy": wrap_policy,
+            "limit_all_gathers": True,
+            "backward_prefetch": prefetch_policy,
+            "sharding_strategy": ShardingStrategy[self.fsdp_sharding_strategy],
+            "cpu_offload": CPUOffload(self.fsdp_cpu_offload_params),
+        }
+        if os.getenv("USE_FSDP_V2", "False").lower() in ("true", "1"):
+            fsdp_options.update({ 
+                "fsdp_version": 2,
+                "reshard_after_forward": False,
+                "cpu_offload": torch.distributed.fsdp.OffloadPolicy() if self.fsdp_cpu_offload_params else None,
+            })
+        print(f'FSDP options: {fsdp_options}')
+
         fsdp_plugin = FullyShardedDataParallelPlugin(
-            auto_wrap_policy=wrap_policy,
-            limit_all_gathers=True,
-            backward_prefetch=prefetch_policy,
-            sharding_strategy=ShardingStrategy[self.fsdp_sharding_strategy],
-            cpu_offload=CPUOffload(self.fsdp_cpu_offload_params),
+            **fsdp_options,
         )
 
         if self.device_str == "hpu":
