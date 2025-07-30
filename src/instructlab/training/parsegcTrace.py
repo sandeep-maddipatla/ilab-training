@@ -36,7 +36,8 @@ def parse_log_file(file_path):
             'total_time': total_time,
             'average_time': average_time,
             'median_time': median_time,
-            'max_time': max_time
+            'max_time': max_time,
+            'times': times  # Add times for histogram
         })
 
     # Sort by total time
@@ -51,6 +52,32 @@ def print_statistics(pass_statistics):
         print(f"  Average Time: {stats['average_time']:.6f} seconds")
         print(f"  Median Time: {stats['median_time']:.6f} seconds")
         print(f"  Maximum Time: {stats['max_time']:.6f} seconds")
+
+        # Print text-based histogram (10 bins)
+        times = stats['times']
+        if len(times) > 0:
+            min_time = min(times)
+            max_time = max(times)
+            if min_time == max_time:
+                bins = [len(times)] + [0]*9
+                bin_edges = [min_time + i for i in range(11)]
+            else:
+                bin_width = (max_time - min_time) / 10
+                bin_edges = [min_time + i*bin_width for i in range(11)]
+                bins = [0]*10
+                for t in times:
+                    # Find the right bin for t
+                    if t == max_time:
+                        bins[-1] += 1
+                    else:
+                        idx = int((t - min_time) / bin_width)
+                        bins[idx] += 1
+            print("  Histogram (10 bins):")
+            for i in range(10):
+                left = bin_edges[i]
+                right = bin_edges[i+1]
+                bar = bins[i]
+                print(f"    [{left:.6f}, {right:.6f}): {bar}")
         print()
 
 if __name__ == "__main__":
