@@ -1,55 +1,11 @@
 # Standard
 from typing import List, Optional, Tuple
-import torch
-import traceback
-
-# --- Monkey-patch grad_mode togglers to print stack trace ---
-_orig_set_grad_enabled = torch.set_grad_enabled
-def debug_set_grad_enabled(mode):
-    print(f"[grad_mode] Global state changed to {mode} at:")
-    traceback.print_stack(limit=20)
-    return _orig_set_grad_enabled(mode)
-torch.set_grad_enabled = debug_set_grad_enabled
-
-_orig_no_grad = torch.no_grad
-class DebugNoGrad(torch.autograd.grad_mode.no_grad):
-    def __call__(self, func):
-        print(f"[grad_mode] Decorating function: {func.__qualname__}")
-        return super().__call__(func)
-    def __enter__(self):
-        print("[grad_mode] Entering torch.no_grad at:")
-        traceback.print_stack(limit=20)
-        return super().__enter__()
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        print("[grad_mode] Exiting torch.no_grad at:")
-        traceback.print_stack(limit=20)
-        return super().__exit__(exc_type, exc_val, exc_tb)
-torch.no_grad = DebugNoGrad
-
-_orig_enable_grad = torch.enable_grad
-class DebugEnableGrad(torch.autograd.grad_mode.enable_grad):
-    def __call__(self, func):
-        print(f"[grad_mode] Decorating function: {func.__qualname__}")
-        return super().__call__(func)
-    def __enter__(self):
-        print("[grad_mode] Entering torch.enable_grad at:")
-        traceback.print_stack(limit=20)
-        return super().__enter__()
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        print("[grad_mode] Exiting torch.enable_grad at:")
-        traceback.print_stack(limit=20)
-        return super().__exit__(exc_type, exc_val, exc_tb)
-torch.enable_grad = DebugEnableGrad
-
 import functools
 import logging
 import math
 import os
 import torch
 import inspect
-import torch
-import traceback
-
 
 logger = logging.getLogger("instructlab.training")
 logger.info('\nTEST TEST TEST TEST\n')
