@@ -58,7 +58,7 @@ def print_statistics(pass_statistics):
         if len(times) > 0:
             min_time = min(times)
             max_time = max(times)
-            if min_time == max_time:
+            if min_time == max_time:2
                 bins = [len(times)] + [0]*9
                 bin_edges = [min_time + i for i in range(11)]
             else:

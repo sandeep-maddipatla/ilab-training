@@ -1,5 +1,6 @@
 import re
 import sys
+import statistics
 
 def mmss_to_seconds(mmss_str):
     minutes, seconds = map(int, mmss_str.split(":"))
@@ -70,6 +71,16 @@ with open("result.log", "r") as file:
                 "epoch_time": epoch_time
             }
 
+    times = []
     for epoch in result_dict.keys():
         r = result_dict[epoch]
         print(f'Epoch: {epoch}, Steps: {r["steps"]}, Time: {r["epoch_time"]}, s/it: {r["seconds_per_it"]}')
+        if epoch > 2:
+            times.append(r["epoch_time"])
+
+
+    print(f'Epoch Time summary:')
+    print(f'  Min: {min(times)}')
+    print(f'  Med: {statistics.median(times)}')
+    print(f'  Avg: {statistics.mean(times)}')
+    print(f'  Max: {max(times)}')
