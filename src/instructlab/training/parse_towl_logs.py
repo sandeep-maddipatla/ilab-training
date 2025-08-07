@@ -43,8 +43,15 @@ for x in range(0, 8):
     print(type(global_memory_usage_df))
 
     itables.show(global_memory_usage_df)
-    tu.plots.plot_memory_usage(global_view)
+    with open(f"mem_usage_{x}.html", "w", encoding="utf-8") as f:
+        f.write(global_memory_usage_df.to_html())
 
+    compile_events_df = global_view.query_recipe_compile()
+    itables.show(compile_events_df)
+    with open(f"compile_events_{x}.html", "w", encoding="utf-8") as f:
+        f.write(compile_events_df.to_html())
+
+    tu.plots.plot_memory_usage(global_view)
     if os.path.exists('plot.png'):
         os.rename('plot.png', f'plot_{x}.png')
         print(f"Renamed plot.png to plot_{x}.png")
