@@ -6,7 +6,12 @@ import math
 import os
 import torch
 import inspect
-import towl.instrument as ti
+
+ti_available = True
+try:
+    import towl.instrument as ti
+except ImportError:
+    ti_available = False
 
 logger = logging.getLogger("instructlab.training")
 logger.info('\nTEST TEST TEST TEST\n')
@@ -169,6 +174,9 @@ class Model:
             logger.info(f'Torch Compile with {backend=}, {dynamic_setting=}, {options=}, {use_layer_compile=}')
             
             use_towl = True if os.getenv("PT_TOWL_LOG_ENABLE", 0) == "1" else False
+            use_towl = use_towl and ti_available
+            logger.info(f'Towl enabled: {use_towl}, ti_available: {ti_available}')
+
             self.model = torch.compile(self.model, backend=backend, dynamic=dynamic_setting, options=options)
 
             if use_layer_compile:
@@ -183,9 +191,10 @@ class Model:
                 logger.info(f'Compiled {count} layers of model separately')
             
             if use_towl:
-                #pass
+                pass
                 #ti.MemoryInterceptor.enable()
                 ti.lib.code.wrap_model(self.model)        
+
         self.reconcile_tokenizer()
         if self.lora_config:
             self.model = self.prepare_peft_model()
