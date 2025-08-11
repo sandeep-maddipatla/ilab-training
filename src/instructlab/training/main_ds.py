@@ -99,6 +99,7 @@ def train(
     model: Model,
     optimizer: torch.optim.Optimizer,
     accelerator: Accelerator,
+    prof=None,
 ):
     model.train()
 
@@ -208,6 +209,9 @@ def train(
                 optimizer.step()
                 accelerator.lr_scheduler.step()
                 optimizer.zero_grad()
+
+            if prof:
+                prof.step()
 
             if local_rank == 0:
                 elapsed_time = time.time() - start
@@ -548,13 +552,21 @@ def main(args):
 
     load_latest_full_state(args=args, accelerator=accelerator)
 
-    train(
-        args,
-        model=m,
-        optimizer=optimizer,
-        accelerator=accelerator,
-    )
-
+    with accelerator.profile() as prof:
+        print(f'{prof=}')
+        train(
+            args,
+            model=m,
+            optimizer=optimizer,
+            accelerator=accelerator,
+            prof=prof,
+        )
+    try:
+        print(prof.key_averages(group_by_input_shape=True).table(sort_by="cpu_time_total", row_limit=10))
+        print(prof.key_averages().table(sort_by="self_cpu_memory_usage", row_limit=10))
+    except Exception as e:
+        print(f'[Rank{local_rank}] Ran into error printing profiler stats: {e}')
+    
     torch.distributed.barrier()
     torch.distributed.destroy_process_group()
 
