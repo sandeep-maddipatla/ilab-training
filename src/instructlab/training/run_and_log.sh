@@ -97,7 +97,7 @@ run() {
     pkill vmstat
 
     [ -d profile_logs ] && echo "Sleep 5s to ensure profiles are collected" && sleep 5
-    [ -d profile_logs ] && for x in $(ls profile_logs/*.json); do echo Compressing ${x}; tar czf ${x}.tgz ${x}; done
+    [ -d profile_logs ] && for x in $(ls profile_logs/*.json); do echo Compressing ${x}; tar czf ${x}.tgz ${x} && rm ${x}; done
     [ -d profile_logs ] && mv profile_logs ${result_dir}
     chmod -R 777 ${result_dir}
     echo Results collected in ${result_dir}. Size $(du -sh ${result_dir})
