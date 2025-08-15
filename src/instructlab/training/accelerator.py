@@ -180,7 +180,7 @@ class Accelerator:
         if os.getenv("USE_FSDP_V2", "False").lower() in ("true", "1"):
             fsdp_options.update({ 
                 "fsdp_version": 2,
-                "reshard_after_forward": False,
+                "reshard_after_forward": True,
                 "cpu_offload": torch.distributed.fsdp.OffloadPolicy() if self.fsdp_cpu_offload_params else None,
             })
         print(f'FSDP options: {fsdp_options}')
