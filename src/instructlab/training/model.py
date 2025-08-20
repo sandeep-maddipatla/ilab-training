@@ -169,7 +169,7 @@ class Model:
             backend = instrumented_backend if os.getenv("USE_INSTRUMENTED_BACKEND", False) else 'hpu_backend'
             dynamic_setting = os.getenv("DYNAMIC_SETTING", 'False')
             dynamic_setting = None if dynamic_setting == 'None' else True if dynamic_setting in ['True', '1'] else False
-            options = {"force_static_compile": True} if not dynamic_setting == False else {}
+            options = {}
             use_layer_compile = os.getenv('USE_LAYER_COMPILE', 'True').lower() in ['true', '1']
             logger.info(f'Torch Compile with {backend=}, {dynamic_setting=}, {options=}, {use_layer_compile=}')
             
